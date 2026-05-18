@@ -1,0 +1,675 @@
+\documentclass[sigconf,nonacm]{acmart}
+
+\usepackage{amsmath}
+\usepackage{amsfonts}
+\usepackage{booktabs}
+\usepackage{algorithm}
+\usepackage{algorithmic}
+\usepackage{listings}
+\usepackage{xcolor}
+
+\lstset{
+  basicstyle=\ttfamily\small,
+  keywordstyle=\color{blue},
+  commentstyle=\color{gray},
+  breaklines=true,
+  frame=single,
+  language=SQL
+}
+
+\settopmatter{printacmref=false}
+\setcopyright{none}
+\renewcommand\footnotetextcopyrightpermission[1]{}
+\pagestyle{plain}
+
+\begin{document}
+
+\title{A Differentially Private SQL Middleware for Repeated Aggregate Queries}
+\subtitle{CMP653 Project Milestone Report}
+
+\author{Refik Can \"Ozta\c{s}}
+\affiliation{%
+  \institution{Hacettepe University}
+}
+\email{N25142279}
+
+\begin{abstract}
+Aggregate SQL queries, despite returning only summary statistics, can leak individual-level information through well-known attack vectors such as differencing attacks and database reconstruction. This report presents a milestone update on the design and implementation of a lightweight differentially private SQL middleware that targets repeated aggregate query workloads. The system introduces workload-aware privacy budget accounting with template-based caching to improve the utility--budget tradeoff compared to naive per-query composition. We describe the threat model that motivates this work with concrete attack examples, present the mathematical framework including sensitivity analysis and composition theorems, report on our prototype implementation and initial experimental setup over the TPC-H benchmark, and define a comprehensive evaluation plan with formal metrics for both utility and privacy leakage measurement.
+\end{abstract}
+
+\maketitle
+
+%% ============================================================
+\section{Introduction}
+\label{sec:intro}
+
+Organizations routinely expose aggregate query interfaces to analysts, dashboards, and reporting tools. A common assumption is that returning only aggregate results---counts, sums, and averages---is sufficient to protect the privacy of individual records. This assumption is \emph{false}. A long line of research in data privacy has demonstrated that aggregate statistics, when combined across multiple queries, can reveal sensitive information about individuals in the underlying dataset.
+
+\subsection{Why Aggregate Queries Leak Privacy}
+\label{sec:why-leak}
+
+The core vulnerability arises from the fact that each aggregate query is a \emph{linear function} of the underlying data. When an analyst issues multiple such queries, the results form a system of linear equations over the secret data. We illustrate this with three concrete attack scenarios.
+
+\paragraph{Attack 1: The Differencing Attack.}
+Consider a hospital database. An attacker issues two queries:
+\begin{lstlisting}
+Q1: SELECT COUNT(*) FROM patients
+    WHERE disease = 'HIV'
+Q2: SELECT COUNT(*) FROM patients
+    WHERE disease = 'HIV'
+    AND name <> 'Alice'
+\end{lstlisting}
+If $Q_1$ returns 47 and $Q_2$ returns 46, the attacker concludes that Alice has HIV. Each query individually reveals only an aggregate, but their \emph{difference} isolates one individual. This is the classical \textbf{differencing attack}~\cite{denning1979tracker}, and it generalizes: any pair of queries whose predicates differ by exactly one record can be exploited.
+
+\paragraph{Attack 2: The Reconstruction Attack.}
+Dinur and Nissim~\cite{dinur2003revealing} proved a fundamental result: if a database with $n$ binary attributes answers more than $O(n)$ random subset-sum queries with error less than $o(\sqrt{n})$ per answer, an attacker can \emph{reconstruct the entire database} with high probability. This is known as the \textbf{Fundamental Law of Information Recovery}~\cite{dwork2017exposed}: ``overly accurate answers to too many questions will destroy privacy in a spectacular way.'' Crucially, even adding moderate noise is insufficient if arbitrarily many queries are allowed.
+
+\paragraph{Attack 3: Repeated Analytical Workloads.}
+In realistic settings such as business intelligence dashboards, analysts do not issue a single query. They issue \emph{sequences} of related aggregates: total revenue by region, then by quarter, then by product category. Each query consumes privacy budget under composition. Under naive sequential composition, $k$ queries each with privacy parameter $\varepsilon$ yield a total privacy loss of $k\varepsilon$. A dashboard issuing 100 daily queries at $\varepsilon = 0.1$ each exhausts a total budget of $\varepsilon = 10$ within a single day. The budget either runs out (denying service) or the per-query $\varepsilon$ must be set so high that individual answers become useless. This is the \textbf{budget exhaustion problem} for repeated workloads.
+
+\subsection{Differential Privacy as a Solution}
+
+Differential privacy (DP)~\cite{dwork2006calibrating} provides the standard formal guarantee against these attacks. A randomized mechanism $\mathcal{M}$ satisfies $\varepsilon$-differential privacy if for all neighboring databases $D, D'$ differing in one record and all subsets $S$ of outputs:
+\begin{equation}
+\Pr[\mathcal{M}(D) \in S] \leq e^{\varepsilon} \cdot \Pr[\mathcal{M}(D') \in S]
+\label{eq:dp}
+\end{equation}
+The parameter $\varepsilon$ controls the privacy--utility tradeoff: smaller $\varepsilon$ means stronger privacy but more noise.
+
+While the definition is elegant, \emph{deploying} it in a SQL system raises practical challenges. The sensitivity of aggregate queries must be bounded, noise must be calibrated per query, and most importantly, the total privacy cost across a workload of queries must be \emph{tracked and managed}. Naive approaches waste budget on repeated or overlapping queries, degrading utility far below what is theoretically achievable.
+
+\subsection{Contribution and Scope}
+
+This project builds a \textbf{differentially private SQL middleware} for repeated aggregate workloads with the following contributions:
+\begin{enumerate}
+    \item A SQL middleware that intercepts aggregate queries (COUNT, SUM, AVG with GROUP BY and WHERE), computes sensitivity, and adds calibrated Laplace noise.
+    \item A \textbf{workload-aware budget ledger} with template-based caching: exact-repeat queries are served from cache at zero additional privacy cost.
+    \item A \textbf{comparative evaluation framework} with formal metrics for utility, privacy budget efficiency, and privacy leakage measurement.
+    \item Experiments over the TPC-H benchmark comparing naive per-query composition against workload-aware accounting.
+\end{enumerate}
+
+The scope is intentionally restricted to single-table aggregate queries under tuple-level DP with bounded contributions. This scoping allows a rigorous and reproducible study of one concrete systems question: whether workload-aware budget accounting provides a measurable improvement over naive composition for repeated aggregate workloads.
+
+%% ============================================================
+\section{Related Work}
+\label{sec:related}
+
+\subsection{Foundations of Differential Privacy}
+
+Dwork et al.~\cite{dwork2006calibrating} introduced $\varepsilon$-differential privacy and the Laplace mechanism. The Laplace mechanism adds noise drawn from $\text{Lap}(\Delta f / \varepsilon)$ to a query answer, where $\Delta f$ is the global sensitivity---the maximum change in the query result when one record is added or removed. Dwork and Roth~\cite{dwork2014algorithmic} provide a comprehensive treatment of the theoretical foundations, including composition theorems that govern privacy loss across multiple queries.
+
+\subsection{Composition Theorems}
+
+The \textbf{basic composition theorem} states that $k$ mechanisms, each satisfying $\varepsilon_i$-DP, together satisfy $(\sum_{i=1}^{k} \varepsilon_i)$-DP. The \textbf{advanced composition theorem}~\cite{dwork2010boosting} provides a tighter bound: for $k$ queries each satisfying $\varepsilon$-DP, the total mechanism satisfies $(\varepsilon\sqrt{2k \ln(1/\delta)} + k\varepsilon(e^{\varepsilon}-1), \delta)$-DP for any $\delta > 0$. Recent work on R\'enyi DP~\cite{mironov2017renyi} and zero-concentrated DP~\cite{bun2016concentrated} provides even tighter accounting for repeated queries. Our workload-aware ledger currently uses basic composition but could benefit from these tighter bounds.
+
+\subsection{Reconstruction and Differencing Attacks}
+
+Dinur and Nissim~\cite{dinur2003revealing} proved that an attacker can reconstruct a database from $O(n \log^2 n)$ noisy aggregate answers unless the noise magnitude is $\Omega(\sqrt{n})$. Dwork et al.~\cite{dwork2017exposed} extended this to demonstrate that the U.S.\ Census faces credible reconstruction attacks from published aggregate statistics. NIST has since published formal guidelines (SP 800-226)~\cite{nist2025sp800226} for evaluating differential privacy guarantees in deployed systems. The differencing attack~\cite{denning1979tracker} remains the simplest and most intuitive example: two overlapping COUNT queries can isolate one individual's contribution.
+
+\subsection{Private SQL Systems}
+
+PINQ~\cite{mcsherry2009privacy} was the first platform to integrate differential privacy with a LINQ-based query interface, tracking sensitivity through the type system. Johnson et al.~\cite{johnson2018towards} developed practical mechanisms for a broader SQL subset. PrivateSQL~\cite{kotsogiannis2019privatesql} introduced a system that decomposes queries into a set of private views. Most recently, DOP-SQL~\cite{yu2024dopsql} built an extensible private SQL engine on top of PostgreSQL with mechanism selection and execution support.
+
+\subsection{Multi-Query Privacy Accounting}
+
+Dong et al.~\cite{dong2023better} showed that answering multiple related relational queries can achieve tighter error bounds than naive composition, by exploiting the algebraic structure shared across queries. This work is conceptually closest to our project. While their approach requires sophisticated relational analysis, our middleware targets a simpler setting---repeated and template-matching aggregate queries---where caching alone can yield significant budget savings.
+
+\subsection{Join Sensitivity}
+
+Dong and Yi~\cite{dong2021residual} introduced residual sensitivity for multi-way join queries, showing that join structure can amplify sensitivity dramatically. Dong et al.~\cite{dong2022r2t} further demonstrated that foreign-key constraints can be exploited for tighter bounds. Our current scope excludes joins, but these results motivate the optional join-aware extension.
+
+%% ============================================================
+\section{Mathematical Background}
+\label{sec:math}
+
+\subsection{Differential Privacy}
+
+\begin{definition}[$\varepsilon$-Differential Privacy]
+A randomized mechanism $\mathcal{M}: \mathcal{D} \rightarrow \mathcal{R}$ satisfies $\varepsilon$-differential privacy if for all neighboring databases $D \sim D'$ (differing in at most one record) and all measurable $S \subseteq \mathcal{R}$:
+$\Pr[\mathcal{M}(D) \in S] \leq e^{\varepsilon} \cdot \Pr[\mathcal{M}(D') \in S]$
+\end{definition}
+
+\subsection{Global Sensitivity}
+
+\begin{definition}[Global Sensitivity]
+For a query function $f: \mathcal{D} \rightarrow \mathbb{R}^d$, the global sensitivity is:
+$\Delta f = \max_{D \sim D'} \| f(D) - f(D') \|_1$
+\end{definition}
+
+For the aggregate functions we support:
+\begin{itemize}
+    \item \textbf{COUNT}: $\Delta f = 1$. Adding or removing one record changes the count by at most 1.
+    \item \textbf{SUM}($c$): $\Delta f = B_c$, where $B_c$ is the upper bound on $|c|$. Adding one record changes the sum by at most $B_c$.
+    \item \textbf{AVG}($c$): We decompose $\text{AVG} = \text{SUM}/\text{COUNT}$ and apply noise to each component independently, yielding $\widetilde{\text{AVG}} = \widetilde{\text{SUM}} / \widetilde{\text{COUNT}}$. The sensitivity of the SUM component is $B_c$ and the sensitivity of COUNT is 1.
+\end{itemize}
+
+\subsection{Laplace Mechanism}
+
+\begin{definition}[Laplace Mechanism]
+Given query $f$ with sensitivity $\Delta f$ and privacy parameter $\varepsilon$, the Laplace mechanism outputs:
+$\mathcal{M}(D) = f(D) + \text{Lap}\left(\frac{\Delta f}{\varepsilon}\right)$
+where $\text{Lap}(b)$ denotes a random variable drawn from the Laplace distribution with scale $b$ and mean 0.
+\end{definition}
+
+The expected absolute error of the Laplace mechanism is $\mathbb{E}[|Z|] = \Delta f / \varepsilon$, and the variance is $\text{Var}(Z) = 2(\Delta f / \varepsilon)^2$.
+
+\subsection{Composition for Repeated Queries}
+
+For a workload of $k$ queries $f_1, \ldots, f_k$, each answered with privacy parameter $\varepsilon_i$:
+
+\paragraph{Sequential Composition.} The total privacy loss is $\varepsilon_{\text{total}} = \sum_{i=1}^{k} \varepsilon_i$. Under uniform allocation ($\varepsilon_i = \varepsilon_0$ for all $i$), this gives $\varepsilon_{\text{total}} = k \cdot \varepsilon_0$.
+
+\paragraph{Parallel Composition.} If queries $f_1, \ldots, f_k$ operate on \emph{disjoint} subsets of the database, the total privacy cost is $\varepsilon_{\text{total}} = \max_i \varepsilon_i$, since each record participates in at most one query.
+
+\paragraph{Post-Processing Invariance.} Any computation on the output of a differentially private mechanism, without additional access to the database, does not incur additional privacy cost. This is the theoretical basis for our caching strategy: serving a cached noisy result for a repeated query is post-processing of a previously privatized output.
+
+\subsection{Workload-Aware Budget Accounting}
+
+Our middleware exploits two key observations:
+\begin{enumerate}
+    \item \textbf{Exact-match caching}: If query $Q_t$ at time $t$ is identical to a previously answered query $Q_s$ ($s < t$), we return the cached noisy result $\widetilde{Q_s}$. By the post-processing property, this costs $\varepsilon = 0$ additional budget.
+    \item \textbf{Template-based tracking}: Queries sharing the same structural template (identical AST modulo literal values in WHERE) are tracked. This enables future extensions such as shared histogram computation, where a single noisy histogram over all parameter values can answer all queries within a template.
+\end{enumerate}
+
+%% ============================================================
+\section{System Architecture and Implementation}
+\label{sec:system}
+
+\subsection{Architecture Overview}
+
+The middleware is implemented in Python and operates as a stateful proxy between the analyst and PostgreSQL. It intercepts SQL queries, validates them against a supported subset, computes sensitivity, checks a privacy budget ledger (with optional caching), adds calibrated noise, and returns the privatized result. Figure~\ref{fig:arch} describes the data flow.
+
+\begin{figure}[h]
+\centering
+\begin{verbatim}
+Analyst --> [SQL Parser/Validator]
+        --> [Query Analyzer (sensitivity)]
+        --> [Budget Ledger (cache check)]
+            |-- cache hit --> return cached result
+            |-- cache miss --> [PostgreSQL]
+                           --> [Laplace Mechanism]
+                           --> [Cache store]
+                           --> return noisy result
+\end{verbatim}
+\caption{Middleware architecture and query flow.}
+\label{fig:arch}
+\end{figure}
+
+The system operates in three execution modes that serve as experimental baselines:
+\begin{itemize}
+    \item \textbf{Exact}: Passes queries directly to PostgreSQL with no noise (non-private baseline).
+    \item \textbf{Naive DP}: Each query independently consumes privacy budget. No caching. Strict sequential composition.
+    \item \textbf{Workload-Aware DP}: Queries are matched against a template-based cache. Exact-repeat queries are served from cache at zero additional privacy cost.
+\end{itemize}
+
+\subsection{Technology Stack}
+
+The prototype uses the following technologies:
+\begin{itemize}
+    \item \textbf{Python 3.12} as the implementation language, chosen for rapid prototyping and access to numerical libraries.
+    \item \textbf{PostgreSQL} as the backend RDBMS, accessed via \texttt{psycopg2}.
+    \item \textbf{sqlglot}~\cite{sqlglot} for SQL parsing, AST manipulation, and template normalization. We chose sqlglot over alternatives (e.g., \texttt{sqlparse}) because it provides a typed AST with node-level traversal, enabling reliable extraction of aggregates, GROUP BY, and WHERE clauses.
+    \item \textbf{NumPy} for noise generation via the Laplace distribution.
+    \item \textbf{pandas}, \textbf{matplotlib}, and \textbf{seaborn} for experiment data collection and visualization.
+\end{itemize}
+
+\subsection{Project Structure}
+
+The codebase is organized as a pip-installable Python package:
+
+\begin{verbatim}
+src/dpdb/
+  config.py      -- YAML config loader
+  db.py          -- PostgreSQL connection wrapper
+  parser.py      -- SQL parsing and validation
+  analyzer.py    -- Sensitivity computation
+  mechanisms.py  -- Laplace noise mechanism
+  template.py    -- Template extraction/matching
+  budget.py      -- Privacy budget ledger
+  middleware.py  -- Main orchestrator
+  cli.py         -- Interactive REPL
+tests/           -- 28 unit tests (all passing)
+experiments/     -- Workloads, benchmark runner,
+                    visualization
+scripts/         -- TPC-H schema DDL, data generator
+\end{verbatim}
+
+\subsection{Component Details}
+
+\subsubsection{SQL Parser and Validator}
+
+The parser uses \texttt{sqlglot.parse()} to convert raw SQL into an abstract syntax tree (AST). It then validates the query against the supported subset through the following checks:
+
+\begin{enumerate}
+    \item The input must be a single \texttt{SELECT} statement.
+    \item No subqueries are allowed (detected by searching the AST for \texttt{Subquery} nodes).
+    \item No JOINs are allowed (detected by searching for \texttt{Join} nodes).
+    \item The \texttt{SELECT} list must contain at least one aggregate function from $\{\texttt{COUNT}, \texttt{SUM}, \texttt{AVG}\}$. Non-aggregate columns are permitted only if they appear in the \texttt{GROUP BY} clause.
+    \item The \texttt{WHERE} clause, if present, must consist of simple predicates (column-operator-literal) combined with \texttt{AND}/\texttt{OR}.
+\end{enumerate}
+
+The parser produces a structured \texttt{ParsedQuery} object containing:
+\begin{itemize}
+    \item The table name, extracted from the \texttt{FROM} clause.
+    \item A list of \texttt{AggregateInfo} records, each holding the function name (\texttt{COUNT}, \texttt{SUM}, or \texttt{AVG}), the target column (or \texttt{None} for \texttt{COUNT(*)}), and an optional alias.
+    \item The \texttt{GROUP BY} column names.
+    \item The \texttt{WHERE} clause as both a raw string and a sorted list of individual predicates (by splitting on \texttt{AND}). The sorted predicate list enables deterministic template comparison.
+\end{itemize}
+
+\noindent\textbf{Example:} The query \texttt{SELECT l\_returnflag, COUNT(*), SUM(l\_quantity) FROM lineitem WHERE l\_discount > 0.05 GROUP BY l\_returnflag} is parsed into: table = \texttt{lineitem}, aggregates = [\texttt{COUNT(*)}, \texttt{SUM(l\_quantity)}], group\_by = [\texttt{l\_returnflag}], where\_predicates = [\texttt{l\_discount > 0.05}].
+
+\subsubsection{Sensitivity Analyzer}
+
+Given a \texttt{ParsedQuery}, the analyzer computes the global sensitivity $\Delta f$ for each aggregate under tuple-level differential privacy (adding or removing one row):
+
+\begin{itemize}
+    \item \textbf{COUNT}: $\Delta f = 1$, since one row changes the count by at most 1. This holds regardless of the WHERE predicate or GROUP BY, because a single row contributes to at most one group.
+    \item \textbf{SUM($c$)}: $\Delta f = B_c$, where $B_c$ is a pre-configured upper bound on $|c|$. These bounds are derived from the TPC-H specification (e.g., \texttt{l\_quantity} $\leq 50$, \texttt{l\_extendedprice} $\leq 105000$, \texttt{o\_totalprice} $\leq 600000$) and stored in the configuration file.
+    \item \textbf{AVG($c$)}: Decomposed into SUM($c$)/COUNT(*). The sensitivity of the SUM component is $B_c$ and the sensitivity of COUNT is 1. Noise is added to each component independently, and the noisy average is computed as $\widetilde{\text{AVG}} = \widetilde{\text{SUM}} / \widetilde{\text{COUNT}}$.
+\end{itemize}
+
+A critical design decision is that column bounds are \emph{statically configured}, not queried from the database. Querying the database for \texttt{MAX(ABS(column))} would itself be a privacy-leaking operation, since the true maximum depends on individual records. Using specification-derived bounds avoids this issue and is documented as an assumption.
+
+\subsubsection{Laplace Mechanism}
+
+The mechanism adds noise drawn from the Laplace distribution:
+\[
+\tilde{a} = a + Z, \quad Z \sim \text{Lap}\left(\frac{\Delta f}{\varepsilon}\right)
+\]
+
+For queries with $m$ aggregate expressions, the per-query $\varepsilon$ is split equally among the aggregates: $\varepsilon_i = \varepsilon / m$. This is a conservative application of sequential composition (the total is still $\varepsilon$). For queries with GROUP BY producing $g$ groups, each group receives \emph{independent} noise at the \emph{same} $\varepsilon_i$. This is correct because adding/removing one row affects at most one group, so the groups compose in \emph{parallel} (no additional budget cost).
+
+Algorithm~\ref{alg:noise} formalizes the noise addition for a complete query result.
+
+\begin{algorithm}[h]
+\caption{Noise Addition for Aggregate Query Results}
+\label{alg:noise}
+\begin{algorithmic}[1]
+\REQUIRE True result rows $R = \{r_1, \ldots, r_g\}$, sensitivities $\{\Delta_1, \ldots, \Delta_m\}$, privacy parameter $\varepsilon$, number of group-by columns $n_g$, number of aggregates $m$
+\ENSURE Noisy result rows $\tilde{R}$
+\STATE $\varepsilon_{\text{agg}} \leftarrow \varepsilon / m$ \COMMENT{Split budget across aggregates}
+\FOR{each row $r_j \in R$}
+    \FOR{$i = 1$ to $m$}
+        \STATE $\text{col\_idx} \leftarrow n_g + i$ \COMMENT{Aggregates follow group-by columns}
+        \STATE $a \leftarrow r_j[\text{col\_idx}]$
+        \STATE $\tilde{a} \leftarrow a + \text{Lap}(\Delta_i / \varepsilon_{\text{agg}})$
+        \IF{aggregate $i$ is COUNT}
+            \STATE $\tilde{a} \leftarrow \max(0, \lfloor \tilde{a} \rceil)$ \COMMENT{Post-processing: non-negative integer}
+        \ENDIF
+        \STATE $\tilde{r}_j[\text{col\_idx}] \leftarrow \tilde{a}$
+    \ENDFOR
+\ENDFOR
+\RETURN $\tilde{R}$
+\end{algorithmic}
+\end{algorithm}
+
+\subsubsection{Template Extraction and Matching}
+
+The template system enables the workload-aware budget strategy by identifying structurally equivalent queries. The process works in two steps:
+
+\paragraph{Step 1: Template Normalization.} Given a parsed query, we create a copy of the AST and replace every literal value inside the \texttt{WHERE} clause with a generic placeholder (\texttt{?}). The resulting AST is serialized to a canonical SQL string, which becomes the \textbf{template}. For example:
+\begin{verbatim}
+Input:  SELECT COUNT(*) FROM lineitem
+        WHERE l_returnflag = 'R'
+Template: SELECT COUNT(*) FROM lineitem
+          WHERE l_returnflag = :1
+\end{verbatim}
+
+\paragraph{Step 2: Hashing.} We compute two SHA-256 hashes:
+\begin{itemize}
+    \item \textbf{Template hash} $h_T$: Hash of the normalized template string. Two queries with the same structure but different WHERE literals share the same $h_T$.
+    \item \textbf{Parameter hash} $h_P$: Hash of the concatenated literal values in the WHERE clause. Two queries with the same $h_T$ and the same $h_P$ are \emph{exact matches}.
+\end{itemize}
+
+The full query fingerprint is the pair $(h_T, h_P)$. The cache in the budget ledger is indexed by $h_T \rightarrow h_P \rightarrow \texttt{CachedResult}$, enabling both template-level lookup and exact-match retrieval.
+
+\subsubsection{Privacy Budget Ledger}
+
+The budget ledger is the core component that differentiates naive from workload-aware execution. It maintains the following state:
+\begin{itemize}
+    \item \texttt{total\_epsilon}: The total privacy budget for the workload.
+    \item \texttt{consumed\_epsilon}: Running sum of $\varepsilon$ allocated so far.
+    \item \texttt{history}: A log of all budget entries (query SQL, $\varepsilon$ allocated, template hash, whether it was a cache hit).
+    \item \texttt{cache}: A two-level dictionary mapping $h_T \rightarrow h_P \rightarrow \texttt{CachedResult}$, where \texttt{CachedResult} stores the noisy columns, rows, and the $\varepsilon$ used to produce them.
+    \item \texttt{template\_counts}: A frequency counter per template hash, tracking how often each template appears in the workload.
+\end{itemize}
+
+Algorithm~\ref{alg:ledger} describes the query execution flow under workload-aware mode.
+
+\begin{algorithm}[h]
+\caption{Workload-Aware Query Execution}
+\label{alg:ledger}
+\begin{algorithmic}[1]
+\REQUIRE Query $Q$, requested privacy parameter $\varepsilon_q$, budget ledger $\mathcal{L}$
+\ENSURE Noisy result $\tilde{R}$ or error
+\STATE Parse and validate $Q \rightarrow P$
+\STATE Compute template hash $h_T$ and parameter hash $h_P$ from $P$
+\IF{$\mathcal{L}.\texttt{cache}[h_T][h_P]$ exists}
+    \STATE Log cache hit with $\varepsilon = 0$
+    \RETURN $\mathcal{L}.\texttt{cache}[h_T][h_P].\texttt{rows}$ \COMMENT{Post-processing, free}
+\ENDIF
+\STATE Compute sensitivities $\{\Delta_1, \ldots, \Delta_m\}$ from $P$
+\IF{$\varepsilon_q > \mathcal{L}.\texttt{remaining}()$}
+    \RETURN \textsc{BudgetExhausted}
+\ENDIF
+\STATE $\mathcal{L}.\texttt{consumed\_epsilon}$ += $\varepsilon_q$
+\STATE Execute $Q$ on PostgreSQL $\rightarrow R_{\text{true}}$
+\STATE $\tilde{R} \leftarrow$ \textsc{AddNoise}($R_{\text{true}}, \{\Delta_i\}, \varepsilon_q$) \COMMENT{Algorithm~\ref{alg:noise}}
+\STATE $\mathcal{L}.\texttt{cache}[h_T][h_P] \leftarrow \tilde{R}$
+\STATE Log entry with $\varepsilon = \varepsilon_q$
+\RETURN $\tilde{R}$
+\end{algorithmic}
+\end{algorithm}
+
+\paragraph{Why caching is privacy-safe.} Returning a cached noisy result is an application of the \emph{post-processing property} of differential privacy (Definition 2.1 in Dwork and Roth~\cite{dwork2014algorithmic}): any deterministic or randomized function applied to the output of an $\varepsilon$-DP mechanism, without additional access to the private data, satisfies $\varepsilon$-DP. Since the cached result was produced by the Laplace mechanism, and we return it without querying the database again, no additional budget is consumed.
+
+\subsubsection{Middleware Orchestrator}
+
+The orchestrator (\texttt{DPMiddleware} class) ties all components together and exposes a single \texttt{execute(sql, epsilon)} method. It handles the full lifecycle:
+\begin{enumerate}
+    \item If mode is \textsc{Exact}, forward the query directly to PostgreSQL and return the result.
+    \item Parse and validate the SQL. Return an error if the query is not in the supported subset.
+    \item Check the budget ledger cache (workload-aware mode only). If a cache hit is found, return the cached noisy result immediately.
+    \item Analyze sensitivity for each aggregate in the query.
+    \item Request budget allocation from the ledger. If the budget is exhausted, return an error.
+    \item Execute the true query on PostgreSQL.
+    \item Apply calibrated Laplace noise to each aggregate column in each result row.
+    \item Store the noisy result in the cache (workload-aware mode only).
+    \item Return the noisy result with metadata (epsilon used, cache hit status, latency).
+\end{enumerate}
+
+\subsection{Interactive CLI}
+
+We implemented a REPL (Read-Eval-Print Loop) interface that allows interactive exploration of the middleware. The CLI displays the remaining privacy budget in the prompt, supports the \texttt{\textbackslash budget} command for a detailed consumption summary, and formats query results in a tabular display with per-query metadata (epsilon consumed, cache hit status, latency in milliseconds).
+
+\subsection{TPC-H Data Generator}
+
+Since the official TPC-H \texttt{dbgen} tool requires compilation and platform-specific setup, we implemented a standalone Python data generator that produces structurally correct TPC-H data directly into PostgreSQL. The generator creates all eight tables (region, nation, supplier, part, partsupp, customer, orders, lineitem) with referential integrity, randomized but realistic attribute values (drawn from the TPC-H specification value ranges), and configurable scale factors. At SF=0.1, it generates approximately 600K lineitem rows, 150K orders, and proportional counts for other tables.
+
+\subsection{Testing}
+
+We developed a comprehensive unit test suite covering all core components:
+
+\begin{itemize}
+    \item \textbf{Parser tests} (11 tests): Valid queries for each aggregate type, GROUP BY, WHERE with AND, multiple aggregates. Rejection of UPDATE statements, JOINs, subqueries, and non-aggregate SELECT lists.
+    \item \textbf{Mechanism tests} (5 tests): Statistical verification that the Laplace mechanism is mean-centered (over 10,000 samples, mean within expected bounds), that variance scales with sensitivity and $\varepsilon$, and that invalid inputs are rejected.
+    \item \textbf{Budget tests} (6 tests): Naive mode correctly tracks consumption and raises BudgetExhausted at the right point. Workload-aware mode correctly returns cache hits at zero cost and records them in the summary.
+    \item \textbf{Template tests} (6 tests): Deterministic hashing, same-template detection for queries differing only in literals, different-template detection for structurally different queries, and exact-match vs.\ template-match distinction.
+\end{itemize}
+
+All 28 tests pass.
+
+\subsection{Implementation Status}
+
+Table~\ref{tab:status} summarizes the current status of all components.
+
+\begin{table}[h]
+\caption{Implementation status of middleware components.}
+\label{tab:status}
+\begin{tabular}{lll}
+\toprule
+Component & Status & Lines \\
+\midrule
+SQL Parser \& Validator & Complete & 120 \\
+Sensitivity Analyzer & Complete & 75 \\
+Laplace Mechanism & Complete & 40 \\
+Budget Ledger (Naive) & Complete & 60 \\
+Budget Ledger (Workload-Aware) & Complete & 90 \\
+Template Extraction \& Matching & Complete & 80 \\
+Middleware Orchestrator & Complete & 135 \\
+Interactive CLI & Complete & 70 \\
+Unit Tests (28 passing) & Complete & 200 \\
+TPC-H Data Generator & Complete & 120 \\
+\midrule
+Benchmark Runner & In Progress & -- \\
+Visualization Pipeline & In Progress & -- \\
+Privacy Leakage Experiments & Planned & -- \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+%% ============================================================
+\section{Experimental Setup and Initial Findings}
+\label{sec:experiments}
+
+\subsection{Data}
+
+We use the TPC-H benchmark~\cite{tpch} at scale factor SF=0.1 (development) and SF=1.0 (final evaluation). TPC-H provides a realistic relational schema with eight tables. Our primary evaluation targets single-table aggregates over the \texttt{lineitem} (approximately 6 million rows at SF=1), \texttt{orders}, and \texttt{customer} tables.
+
+\subsection{Workload Design}
+
+We designed four workloads to stress different aspects of the middleware:
+\begin{itemize}
+    \item \textbf{W1 (Repetitive)}: The same COUNT query repeated 20 times. Workload-aware caching should serve 19 of 20 from cache.
+    \item \textbf{W2 (Parametric)}: Same-template queries with varying WHERE predicates. Template tracking is exercised but exact cache hits are limited.
+    \item \textbf{W3 (Diverse)}: 20 distinct queries mixing COUNT, SUM, and AVG across different tables. Minimal cache reuse.
+    \item \textbf{W4 (Progressive Refinement)}: Broad queries followed by progressively narrower predicates, with some repeats. Tests mixed caching behavior.
+\end{itemize}
+
+\subsection{Initial Findings}
+
+We have verified through unit testing (28 tests, all passing) that:
+\begin{itemize}
+    \item The parser correctly accepts all supported query forms and rejects unsupported ones (JOINs, subqueries, non-aggregate SELECTs).
+    \item Template extraction is deterministic: identical queries produce identical hashes; queries differing only in WHERE literals produce the same template but different parameter hashes.
+    \item The Laplace mechanism is correctly calibrated: over 10,000 samples, the empirical mean matches the true value within expected bounds, and variance scales correctly with sensitivity and $\varepsilon$.
+    \item The workload-aware ledger correctly serves cache hits at zero additional budget cost and tracks cumulative consumption.
+\end{itemize}
+
+%% ============================================================
+\section{Evaluation Plan: Metrics and Comparisons}
+\label{sec:metrics}
+
+We define three categories of metrics, aligned with both the differential privacy literature and NIST guidelines~\cite{nist2025sp800226}.
+
+\subsection{Utility Metrics}
+
+Utility measures how close the noisy answers are to the true answers. For a workload of $k$ queries where $a_i$ is the true answer and $\tilde{a}_i$ is the noisy answer:
+
+\begin{itemize}
+    \item \textbf{Mean Absolute Error (MAE)}: $\text{MAE} = \frac{1}{k} \sum_{i=1}^{k} |a_i - \tilde{a}_i|$
+
+    Measures average noise magnitude across the workload. Lower is better.
+
+    \item \textbf{Root Mean Squared Error (RMSE)}: $\text{RMSE} = \sqrt{\frac{1}{k} \sum_{i=1}^{k} (a_i - \tilde{a}_i)^2}$
+
+    Penalizes large errors more heavily than MAE.
+
+    \item \textbf{Mean Relative Error (MRE)}: $\text{MRE} = \frac{1}{k} \sum_{i=1}^{k} \frac{|a_i - \tilde{a}_i|}{|a_i|}$ for $a_i \neq 0$
+
+    Scale-independent measure; critical for comparing utility across queries with different magnitudes (e.g., COUNT returning 50 vs.\ SUM returning 5,000,000).
+
+    \item \textbf{Answer Quality Rate (AQR)}: $\text{AQR}(\tau) = \frac{1}{k} \sum_{i=1}^{k} \mathbf{1}\left[\frac{|a_i - \tilde{a}_i|}{|a_i|} \leq \tau\right]$
+
+    Fraction of answers within a relative error threshold $\tau$ (e.g., $\tau = 0.05$ for 5\% accuracy). This directly measures how many answers are ``usable'' for decision-making.
+\end{itemize}
+
+\subsection{Privacy Budget Efficiency Metrics}
+
+These metrics capture how well the system uses its finite privacy budget:
+
+\begin{itemize}
+    \item \textbf{Queries per Epsilon (QPE)}: $\text{QPE} = \frac{k}{\varepsilon_{\text{consumed}}}$
+
+    Number of queries answered per unit of privacy budget consumed. Higher QPE means more efficient budget use. For naive composition, $\text{QPE} = 1/\varepsilon_{\text{per-query}}$. Workload-aware should achieve higher QPE through caching.
+
+    \item \textbf{Budget Exhaustion Point (BEP)}: The query index $k^*$ at which the budget is fully consumed:
+    $k^* = \min\{k : \sum_{i=1}^{k} \varepsilon_i \geq \varepsilon_{\text{total}}\}$
+
+    Higher $k^*$ means the system can answer more queries before denial of service.
+
+    \item \textbf{Cache Hit Rate (CHR)}: $\text{CHR} = \frac{|\{i : \text{cache\_hit}(Q_i) = \text{true}\}|}{k}$
+
+    Fraction of queries served from cache. Only applicable to workload-aware mode. CHR $= 0$ for naive.
+
+    \item \textbf{Budget Savings Ratio (BSR)}: $\text{BSR} = 1 - \frac{\varepsilon_{\text{workload-aware}}}{\varepsilon_{\text{naive}}}$
+
+    Fraction of budget saved by workload-aware vs.\ naive for the same workload. BSR $= 0$ means no savings; BSR close to 1 means significant savings.
+\end{itemize}
+
+\subsection{Privacy Leakage Metrics}
+
+Beyond the theoretical $\varepsilon$ guarantee, we measure empirical privacy leakage:
+
+\begin{itemize}
+    \item \textbf{Membership Inference Accuracy (MIA)}: Given a target record $r$ and the noisy query output, an adversary guesses whether $r$ is in the database. We simulate this by running queries on $D$ (with $r$) and $D' = D \setminus \{r\}$ (without $r$) and measuring how distinguishable the output distributions are. For $\varepsilon$-DP, the advantage should be bounded by $e^{\varepsilon} - 1$.
+    $\text{MIA} = \frac{1}{T}\sum_{t=1}^{T} \mathbf{1}[\text{adversary correctly guesses membership in trial } t]$
+
+    \item \textbf{Empirical Privacy Loss}: For a workload of queries, we compute the log-likelihood ratio between the output distribution under $D$ vs.\ $D'$:
+    $\hat{\varepsilon}_{\text{emp}} = \max_{i} \left| \ln \frac{\Pr[\tilde{a}_i | D]}{\Pr[\tilde{a}_i | D']} \right|$
+
+    This should not exceed the theoretical $\varepsilon_{\text{total}}$ consumed. Empirical measurement validates that the implementation does not leak more than claimed.
+
+    \item \textbf{Reconstruction Error under Attack}: We simulate a reconstruction adversary who issues $m$ aggregate queries and attempts to infer individual attribute values using least-squares. We measure:
+    $\text{Reconstruction Accuracy} = \frac{|\text{correctly inferred attributes}|}{|\text{total attributes}|}$
+
+    This should decrease as $\varepsilon$ decreases (more noise) and as fewer queries are allowed.
+\end{itemize}
+
+\subsection{System Performance Metrics}
+
+\begin{itemize}
+    \item \textbf{Query Latency}: Wall-clock time per query (ms). We report median and p95.
+    \item \textbf{Middleware Overhead}: $\text{Overhead} = t_{\text{dp}} - t_{\text{exact}}$, the additional time due to parsing, sensitivity computation, noise addition, and cache lookup.
+    \item \textbf{Throughput}: Queries per second under sustained workload.
+\end{itemize}
+
+\subsection{Planned Comparisons}
+
+Table~\ref{tab:comparisons} summarizes the planned experimental comparisons.
+
+\begin{table}[h]
+\caption{Planned experimental comparisons.}
+\label{tab:comparisons}
+\begin{tabular}{p{2.2cm}p{5.5cm}}
+\toprule
+Comparison & What it Tests \\
+\midrule
+Naive DP vs.\ Workload-Aware & Budget savings, utility improvement from caching \\
+Varying $\varepsilon$ (0.1, 0.5, 1.0, 5.0) & Privacy--utility tradeoff curve \\
+Varying workload size ($k$ = 10, 20, 50, 100) & Scalability of budget accounting \\
+W1 vs.\ W2 vs.\ W3 vs.\ W4 & Impact of workload repetitiveness on savings \\
+MIA at different $\varepsilon$ & Empirical validation of privacy guarantee \\
+Reconstruction under $k$ queries & Empirical Dinur--Nissim bound validation \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+%% ============================================================
+\section{Remaining Work}
+\label{sec:remaining}
+
+The following tasks remain:
+
+\begin{enumerate}
+    \item \textbf{TPC-H deployment and data loading}: Set up PostgreSQL with TPC-H at SF=0.1 and SF=1.0, validate schema and data.
+    \item \textbf{Benchmark execution}: Run all four workloads under both modes across five trials per configuration, varying $\varepsilon \in \{0.1, 0.5, 1.0, 5.0\}$.
+    \item \textbf{Privacy leakage experiments}: Implement the membership inference and reconstruction attack simulations described in Section~\ref{sec:metrics}.
+    \item \textbf{Advanced composition} (optional): Integrate R\'enyi DP accounting for tighter budget tracking under repeated queries.
+    \item \textbf{Join-aware heuristic} (optional): Extend the middleware to handle a restricted set of equi-join COUNT queries with foreign-key-aware sensitivity.
+    \item \textbf{Visualization and analysis}: Generate publication-quality figures for all metrics.
+    \item \textbf{Final paper}: Prepare the complete manuscript in ACM conference format.
+\end{enumerate}
+
+%% ============================================================
+\section{Conclusion}
+
+This milestone report has presented the motivation, design, and partial implementation of a differentially private SQL middleware for repeated aggregate workloads. We have clarified why aggregate queries leak privacy through differencing and reconstruction attacks, established the mathematical framework for our approach, and described a fully implemented prototype with 28 passing unit tests. The remaining work focuses on experimental evaluation with formal metrics for utility (MAE, RMSE, MRE, AQR), budget efficiency (QPE, BEP, CHR, BSR), and empirical privacy leakage (MIA, empirical $\varepsilon$, reconstruction accuracy).
+
+%% ============================================================
+\bibliographystyle{ACM-Reference-Format}
+\begin{thebibliography}{20}
+
+\bibitem{denning1979tracker}
+Dorothy~E. Denning. 1979.
+\newblock Are Statistical Data Bases Secure?
+\newblock In {\em Proceedings of the National Computer Conference}. AFIPS Press, 525--530.
+
+\bibitem{dinur2003revealing}
+Irit Dinur and Kobbi Nissim. 2003.
+\newblock Revealing Information while Preserving Privacy.
+\newblock In {\em Proceedings of the 22nd ACM SIGMOD-SIGACT-SIGART Symposium on Principles of Database Systems (PODS '03)}. ACM, 202--210.
+
+\bibitem{dwork2006calibrating}
+Cynthia Dwork, Frank McSherry, Kobbi Nissim, and Adam Smith. 2006.
+\newblock Calibrating Noise to Sensitivity in Private Data Analysis.
+\newblock In {\em Proceedings of the 3rd Theory of Cryptography Conference (TCC '06)}. Springer, 265--284.
+
+\bibitem{dwork2010boosting}
+Cynthia Dwork, Guy~N. Rothblum, and Salil Vadhan. 2010.
+\newblock Boosting and Differential Privacy.
+\newblock In {\em Proceedings of the 51st Annual IEEE Symposium on Foundations of Computer Science (FOCS '10)}. IEEE, 51--60.
+
+\bibitem{dwork2014algorithmic}
+Cynthia Dwork and Aaron Roth. 2014.
+\newblock {\em The Algorithmic Foundations of Differential Privacy}.
+\newblock Foundations and Trends in Theoretical Computer Science, Vol.~9, No.~3--4, 211--407.
+
+\bibitem{dwork2017exposed}
+Cynthia Dwork, Adam Smith, Thomas Steinke, and Jonathan Ullman. 2017.
+\newblock Exposed! A Survey of Attacks on Private Data.
+\newblock {\em Annual Review of Statistics and Its Application} 4 (2017), 61--84.
+
+\bibitem{mironov2017renyi}
+Ilya Mironov. 2017.
+\newblock R\'{e}nyi Differential Privacy.
+\newblock In {\em Proceedings of the 30th IEEE Computer Security Foundations Symposium (CSF '17)}. IEEE, 263--275.
+
+\bibitem{bun2016concentrated}
+Mark Bun and Thomas Steinke. 2016.
+\newblock Concentrated Differential Privacy: Simplifications, Extensions, and Lower Bounds.
+\newblock In {\em Proceedings of the 14th Theory of Cryptography Conference (TCC '16)}. Springer, 635--658.
+
+\bibitem{mcsherry2009privacy}
+Frank McSherry. 2009.
+\newblock Privacy Integrated Queries: An Extensible Platform for Privacy-preserving Data Analysis.
+\newblock In {\em Proceedings of the 2009 ACM SIGMOD International Conference on Management of Data}. ACM, 19--30.
+
+\bibitem{johnson2018towards}
+Noah Johnson, Joseph~P. Near, and Dawn Song. 2018.
+\newblock Towards Practical Differential Privacy for SQL Queries.
+\newblock {\em Proceedings of the VLDB Endowment} 11, 5 (2018), 526--539.
+
+\bibitem{kotsogiannis2019privatesql}
+Ios Kotsogiannis, Yuchao Tao, Xi~He, Maryam Fanaeepour, Ashwin Machanavajjhala, Michael Hay, and Gerome Miklau. 2019.
+\newblock PrivateSQL: A Differentially Private SQL Query Engine.
+\newblock {\em Proceedings of the VLDB Endowment} 12, 11 (2019), 1371--1384.
+
+\bibitem{yu2024dopsql}
+Jianzhe Yu, Wei Dong, Juanru Fang, Dajun Sun, and Ke Yi. 2024.
+\newblock DOP-SQL: A General-purpose, High-utility, and Extensible Private SQL System.
+\newblock {\em Proceedings of the VLDB Endowment} 17, 12 (2024), 4385--4388.
+
+\bibitem{dong2021residual}
+Wei Dong and Ke Yi. 2021.
+\newblock Residual Sensitivity for Differentially Private Multi-Way Joins.
+\newblock In {\em Proceedings of the 2021 International Conference on Management of Data (SIGMOD '21)}. ACM, 432--445.
+
+\bibitem{dong2022r2t}
+Wei Dong, Juanru Fang, Ke Yi, Yuchao Tao, and Ashwin Machanavajjhala. 2022.
+\newblock R2T: Instance-optimal Truncation for Differentially Private Query Evaluation with Foreign Keys.
+\newblock In {\em Proceedings of the 2022 International Conference on Management of Data (SIGMOD '22)}. ACM, 759--772.
+
+\bibitem{dong2023better}
+Wei Dong, Dajun Sun, and Ke Yi. 2023.
+\newblock Better than Composition: How to Answer Multiple Relational Queries under Differential Privacy.
+\newblock {\em Proceedings of the ACM on Management of Data} 1, 2 (2023), 123:1--123:26.
+
+\bibitem{nist2025sp800226}
+National Institute of Standards and Technology. 2025.
+\newblock Guidelines for Evaluating Differential Privacy Guarantees.
+\newblock {\em NIST Special Publication 800-226}.
+
+\bibitem{tpch}
+Transaction Processing Performance Council. 2024.
+\newblock TPC Benchmark H (Decision Support) Standard Specification.
+\newblock Technical Report.
+
+\bibitem{sqlglot}
+Tobias Raabe et~al. 2024.
+\newblock sqlglot: A Python SQL Parser and Transpiler.
+\newblock \url{https://github.com/tobymao/sqlglot}.
+
+\end{thebibliography}
+
+\end{document}

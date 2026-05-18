@@ -1,0 +1,36 @@
+backend: duckdb  # "duckdb" or "postgres"
+duckdb_path: data/dpdb.duckdb
+
+database:
+  host: localhost
+  port: 5432
+  name: tpch
+  user: postgres
+  password: postgres
+
+privacy:
+  total_epsilon: 10.0
+  default_query_epsilon: 1.0
+  mechanism: laplace
+
+# Upper bounds for SUM/AVG sensitivity (from TPC-H spec)
+column_bounds:
+  lineitem:
+    l_quantity: 50.0
+    l_extendedprice: 105000.0
+    l_discount: 0.10
+    l_tax: 0.08
+  orders:
+    o_totalprice: 600000.0
+  partsupp:
+    ps_availqty: 9999.0
+    ps_supplycost: 1000.0
+  part:
+    p_retailprice: 2100.0
+  adult:
+    age: 100.0
+    fnlwgt: 1500000.0
+    education_num: 20.0
+    capital_gain: 100000.0
+    capital_loss: 5000.0
+    hours_per_week: 100.0
