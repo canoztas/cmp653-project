@@ -20,6 +20,7 @@ class ExecutionMode(str, Enum):
     NAIVE_DP = "naive_dp"
     WORKLOAD_DP = "workload_dp"
     SEMANTIC_DP = "semantic_dp"
+    TEMPORAL_DP = "temporal_dp"  # workload-aware + staleness/update model
 
 
 @dataclass
@@ -41,6 +42,9 @@ class DPMiddleware:
         config: Config,
         mode: ExecutionMode = ExecutionMode.EXACT,
         db: Optional[Database] = None,
+        staleness_tolerance: float = float("inf"),
+        update_rate: float = 0.0,
+        update_invalidation_prob: float = 0.0,
     ):
         self.config = config
         self.mode = mode
@@ -53,6 +57,14 @@ class DPMiddleware:
         elif mode == ExecutionMode.WORKLOAD_DP:
             self.budget = BudgetLedger(
                 config.privacy.total_epsilon, AllocationStrategy.WORKLOAD_AWARE
+            )
+        elif mode == ExecutionMode.TEMPORAL_DP:
+            self.budget = BudgetLedger(
+                config.privacy.total_epsilon,
+                AllocationStrategy.WORKLOAD_AWARE,
+                staleness_tolerance=staleness_tolerance,
+                update_rate=update_rate,
+                update_invalidation_prob=update_invalidation_prob,
             )
         elif mode == ExecutionMode.SEMANTIC_DP:
             from dpdb.semantic import SemanticMatcher

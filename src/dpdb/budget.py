@@ -41,7 +41,10 @@ class BudgetLedger:
     """
 
     def __init__(self, total_epsilon: float, strategy: AllocationStrategy,
-                 semantic_matcher=None):
+                 semantic_matcher=None,
+                 staleness_tolerance: float = float("inf"),
+                 update_rate: float = 0.0,
+                 update_invalidation_prob: float = 0.0):
         self.total_epsilon = total_epsilon
         self.strategy = strategy
         self.consumed_epsilon = 0.0
@@ -53,6 +56,14 @@ class BudgetLedger:
         # Semantic cache (only used in SEMANTIC_AWARE mode)
         self.semantic_matcher = semantic_matcher
         self.semantic_hits = 0
+        # Temporal regime (R3 extension)
+        self.staleness_tolerance = staleness_tolerance  # tau (in logical query units)
+        self.update_rate = update_rate                  # lambda (per logical step)
+        self.update_invalidation_prob = update_invalidation_prob
+        self._logical_time = 0                          # incremented per query
+        self.expired_evictions = 0
+        self.update_evictions = 0
+        self._rng = None  # initialized lazily for update simulation
 
     @property
     def remaining(self) -> float:
@@ -62,13 +73,37 @@ class BudgetLedger:
     def is_exhausted(self) -> bool:
         return self.remaining <= 0
 
+    def _tick_clock(self):
+        """Advance logical time; simulate update arrivals if update_rate > 0."""
+        self._logical_time += 1
+        if self.update_rate > 0 and self.update_invalidation_prob > 0:
+            import random
+            if self._rng is None:
+                self._rng = random.Random(42)
+            # Poisson-like: probability of an update event in this step
+            if self._rng.random() < self.update_rate:
+                # An update occurred; invalidate a random fraction of cache
+                for t_hash, params in self._cache.items():
+                    for p_hash, entry in list(params.items()):
+                        if not entry.invalidated and self._rng.random() < self.update_invalidation_prob:
+                            entry.invalidated = True
+                            self.update_evictions += 1
+
+    def _is_stale(self, entry: CachedResult) -> bool:
+        """Check if a cached entry has exceeded staleness tolerance or been invalidated."""
+        if entry.invalidated:
+            return True
+        age = self._logical_time - entry.issued_at
+        return age > self.staleness_tolerance
+
     def try_cache(self, parsed: ParsedQuery) -> Optional[CachedResult]:
         """Check cache for this query.
 
         - NAIVE: never caches.
-        - WORKLOAD_AWARE: exact template + parameter match.
+        - WORKLOAD_AWARE: exact template + parameter match (with optional temporal check).
         - SEMANTIC_AWARE: exact match first, then semantic similarity match.
         """
+        self._tick_clock()
         if self.strategy == AllocationStrategy.NAIVE:
             return None
 
@@ -80,13 +115,18 @@ class BudgetLedger:
         if template_cache is not None:
             cached = template_cache.get(p_hash)
             if cached is not None:
-                self.history.append(BudgetEntry(
-                    query_sql=parsed.raw_sql,
-                    epsilon_allocated=0.0,
-                    template_hash=t_hash,
-                    cache_hit=True,
-                ))
-                return cached
+                if self._is_stale(cached):
+                    # Entry expired or invalidated - evict and treat as miss
+                    del template_cache[p_hash]
+                    self.expired_evictions += 1
+                else:
+                    self.history.append(BudgetEntry(
+                        query_sql=parsed.raw_sql,
+                        epsilon_allocated=0.0,
+                        template_hash=t_hash,
+                        cache_hit=True,
+                    ))
+                    return cached
 
         # L2: Semantic match (only in SEMANTIC_AWARE mode)
         if (self.strategy == AllocationStrategy.SEMANTIC_AWARE
@@ -193,6 +233,8 @@ class BudgetLedger:
             rows=rows,
             epsilon_used=epsilon_used,
             query_sql=parsed.raw_sql,
+            issued_at=self._logical_time,
+            invalidated=False,
         )
 
         # Also add to semantic matcher if present
@@ -214,4 +256,7 @@ class BudgetLedger:
             "semantic_hits": self.semantic_hits,
             "cache_hit_rate": cache_hits / len(self.history) if self.history else 0.0,
             "unique_templates": len(self._template_counts),
+            "expired_evictions": self.expired_evictions,
+            "update_evictions": self.update_evictions,
+            "logical_time": self._logical_time,
         }

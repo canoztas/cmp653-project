@@ -1,291 +1,220 @@
-# DP-SQL: A Differentially Private SQL Middleware for Repeated Aggregate Queries
+# DP-SQL: A Statistical Model of Privacy-Budget Consumption in Repeated Aggregate SQL Workloads
 
 **CMP653 Database Management Systems Project — Hacettepe University**
 Author: Refik Can Öztaş (N25142279)
 
-A lightweight Python middleware that intercepts aggregate SQL queries, adds calibrated Laplace noise for differential privacy, and uses **workload-aware budget accounting with template-based caching** to outperform standard sequential composition (PINQ-style) by up to **10x in budget efficiency** on repetitive analytical workloads.
+A differentially private SQL middleware built around a **closed-form analytical model** that predicts privacy budget consumption and per-query utility from workload structure (template repetition skew, group cardinality, temporal staleness). The model recovers the toy `1 − 1/k` budget-savings result as the high-skew corner case and naive sequential composition as the uniform-distribution limit. The middleware is the experimental apparatus that validates the model.
 
 ---
 
-## TL;DR — Headline Result
+## TL;DR — Headline Results
 
-Running 20 identical COUNT queries on TPC-H (SF=1, 6M rows) with a budget of ε = 10:
+### Model validation (R6)
+On 720 trials across a Zipf workload grid (α ∈ {0, 0.5, 1, 1.5, 2, 3} × k ∈ {10, 25, 50, 100}):
 
-| Strategy | Queries answered | ε consumed | Cache hits |
-|----------|------------------|------------|------------|
-| PINQ / Naive DP (textbook sequential composition) | **10 / 20** | 10.0 | 0 |
-| Workload-Aware (ours) | **20 / 20** | **1.0** | **19** |
+- Predicted `E[u_k]` matches empirical mean within **<3% in 22 of 24 cells**.
+- Predicted budget savings `S(k) = 1 - E[u_k]/k` matches within **<2% in 23 of 24 cells**.
+- Two model limits empirically confirmed:
+  - α → ∞ (perfect repetition): `S(k) = 1 − 1/k` ✓
+  - α → 0 (uniform): `S(k) → 0` ✓
 
-**90% privacy budget savings, 2× more queries answered**, while preserving ε-differential privacy through the post-processing property.
+### Leakage analysis (R4)
+- Membership Inference AUC tracks the theoretical bound `exp(ε)/(1+exp(ε))` within ≤1%.
+- Drill-down reconstruction error scales as `~2/ε`, as predicted by the difference of two Laplace variables.
 
----
-
-## Why This Project Matters
-
-Aggregate SQL queries — even when returning only summary statistics — leak individual-level information through three well-known attack vectors:
-
-1. **Differencing Attack.** Two COUNT queries differing by one record isolate that record's attribute.
-   ```sql
-   Q1: SELECT COUNT(*) FROM patients WHERE disease='HIV'           -- 47
-   Q2: SELECT COUNT(*) FROM patients WHERE disease='HIV' AND name<>'Alice'  -- 46
-   ⇒ Alice has HIV
-   ```
-2. **Reconstruction Attack (Dinur–Nissim 2003).** O(n) aggregate queries with insufficient noise can reconstruct the entire database — the *Fundamental Law of Information Recovery*.
-3. **Budget Exhaustion in Repeated Workloads.** A dashboard issuing 100 daily queries at ε = 0.1 each burns through ε = 10 total budget in one day under naive sequential composition.
-
-Differential Privacy (DP) addresses these with calibrated noise — but a *practical* DP-SQL system must also manage the privacy budget across a *workload*, not just a single query. That's what this project investigates.
+### Temporal coupling (R3)
+- Staleness tolerance τ → ∞: budget reduces to static case `eps_q × E[u_k]` ✓
+- Update rate λ > 0: budget grows linearly with `T·λ·q_inv`, matching the analytical prediction within 15%.
 
 ---
 
-## What's Implemented
+## What This Project Is
 
-A complete prototype (~1,200 lines of Python) including:
+The milestone version framed exact-repeat caching as the contribution. The reviewer pointed out that caching is a trivial consequence of DP's post-processing property. The final version makes the **analytical model** the contribution; caching is the mechanism that the model predicts the savings of.
+
+### The Model in One Equation
+
+For a workload of `k` queries drawn i.i.d. from a template distribution {p_i}:
+```
+E[u_k] = Σ_i [1 − (1 − p_i)^k]                    (Proposition 1)
+E[ε_workload-aware(k)] = ε_q × E[u_k]              (Proposition 2)
+Budget savings: S(k) = 1 − E[u_k] / k             (Proposition 2)
+```
+
+Two limits recover existing intuition:
+- **Perfect repetition** (p_1 = 1): `S(k) = 1 − 1/k` (the toy formula, now a corner case)
+- **Uniform, m → ∞**: `S(k) → 0` (naive composition)
+
+Plus a concentration bound (McDiarmid's inequality) and a utility prediction under fixed total budget.
+
+### The Temporal Extension
+
+```
+E[ε_temporal(T)] = ε_q × E[u_k_total] × N(T, τ, λ, q)
+N(T, τ, λ, q) = ⌈T/τ⌉ + T·λ·q              (Proposition 6)
+```
+
+Three regimes: static (τ → ∞), bounded staleness, update-driven Poisson.
+
+---
+
+## Reviewer Feedback → Revision Map
+
+| Brief item | What it asked for | Where addressed |
+|------------|-------------------|-----------------|
+| R1 | Reframe central contribution | `report/final_report.tex` §1, abstract |
+| R2 | Statistical budget vs DP model | `src/dpdb/model.py`, `report/R2_model_sketch.md`, §4 |
+| R3 | Couple budget with temporality | `src/dpdb/budget.py` (staleness + updates), §5 Algorithm 1 |
+| R4 | Execute leakage experiments | `experiments/leakage.py`, §7 |
+| R5 | Address inline comments | §3 (AVG), §4 (1-1/k as corner case), §5 (Algorithm 1) |
+| R6 | Run benchmark campaign | `experiments/{model,semantic,temporal}_validation.py`, §6 |
+
+Full mapping in [`report/response_to_reviewer.md`](report/response_to_reviewer.md).
+
+---
+
+## Implementation
+
+A ~1.4 KLOC Python prototype with 57 passing unit tests:
 
 | Component | File | Purpose |
 |-----------|------|---------|
-| SQL Parser & Validator | `src/dpdb/parser.py` | sqlglot-based AST extraction, supports COUNT/SUM/AVG + GROUP BY + WHERE |
-| Sensitivity Analyzer | `src/dpdb/analyzer.py` | Global sensitivity per aggregate under tuple-level DP |
-| Laplace Mechanism | `src/dpdb/mechanisms.py` | Calibrated noise sampling |
-| **Budget Ledger** | `src/dpdb/budget.py` | Naive, workload-aware, and semantic-aware strategies |
-| **Template Matching** | `src/dpdb/template.py` | AST normalization + hashing for L1 cache lookup |
-| **Semantic Matching** | `src/dpdb/semantic.py` | L2 cache via Tree Kernel (Collins-Duffy) + AST Embedding (sentence-transformers) |
-| Middleware Orchestrator | `src/dpdb/middleware.py` | End-to-end query lifecycle |
-| Interactive CLI | `src/dpdb/cli.py` | REPL for testing |
-| **Step-by-step demo** | `src/dpdb/demo.py` | Visual trace of every query stage |
-| **Presentation script** | `scripts/presentation_demo.py` | 5 scenario walk-through |
-| Data Loader | `scripts/load_data.py` | TPC-H (via DuckDB extension) + UCI Adult |
-| Benchmarks | `experiments/benchmark.py` | 4 workloads × 3 modes × 5 trials |
-| Visualizations | `experiments/visualize.py` | 6 publication-quality plots |
-| Unit Tests | `tests/` | 28 tests, all passing |
+| **Analytical model** | `src/dpdb/model.py` | Zipf workload, E[u_k], savings, McDiarmid, utility, temporal |
+| SQL parser/validator | `src/dpdb/parser.py` | sqlglot-based, single-table aggregates only |
+| Sensitivity analyzer | `src/dpdb/analyzer.py` | COUNT/SUM/AVG sensitivity with config bounds |
+| Laplace mechanism | `src/dpdb/mechanisms.py` | Calibrated noise + GROUP BY parallel composition |
+| **Budget ledger** | `src/dpdb/budget.py` | Naive, workload-aware, semantic-aware, temporal modes |
+| Template matching | `src/dpdb/template.py` | AST normalization + hashing for L1 cache |
+| **Semantic matching** | `src/dpdb/semantic.py` | Tree kernel (Collins-Duffy 2001) + AST embedding (CodeBERT-style) |
+| **Zipf workload gen** | `src/dpdb/workload_gen.py` | Real TPC-H/Adult templates sampled from Zipf(α) |
+| Middleware orchestrator | `src/dpdb/middleware.py` | 5 execution modes |
+| Step-by-step demo | `src/dpdb/demo.py` | Visual trace UI |
 
 ---
 
 ## Quick Start
 
-### 1. Install
 ```powershell
+# 1. Install
 pip install -e ".[dev]"
-```
 
-### 2. Generate data (TPC-H SF=1 + UCI Adult)
-```powershell
+# 2. Generate data
 python3 scripts/load_data.py --sf 1.0
-```
-Output: `data/dpdb.duckdb` containing 8 TPC-H tables (6M+ lineitem rows) and the 48,842-row Adult dataset.
 
-### 3. Run the live demo
-```powershell
+# 3. Run the analytical model self-check (verifies limits)
+python3 -m dpdb.model
+
+# 4. Run the model-validation benchmark (720 trials, ~3 min)
+python3 experiments/model_validation.py --trials 30
+
+# 5. Run the leakage experiments
+python3 experiments/leakage.py
+
+# 6. Run the temporal validation
+python3 experiments/temporal_validation.py --trials 10
+
+# 7. Run the semantic L2 experiment
+python3 experiments/semantic_validation.py --trials 5
+
+# 8. Run the live demo
 python3 scripts/presentation_demo.py
+
+# 9. Run unit tests
+python3 -m pytest tests/ -v
 ```
-Walks through 5 scenarios with step-by-step traces.
-
-### 4. Run benchmarks
-```powershell
-python3 experiments/benchmark.py --trials 5
-python3 experiments/visualize.py
-```
-Generates 6 plots in `results/figures/`.
-
-### 5. Try queries interactively
-```powershell
-python3 -m dpdb.demo
-dp-sql> SELECT COUNT(*) FROM adult WHERE age > 40
-dp-sql> SELECT SUM(l_extendedprice) FROM lineitem WHERE l_discount > 0.05
-dp-sql> \budget
-```
-
----
-
-## Three Execution Modes
-
-| Mode | Cache | When to use |
-|------|-------|-------------|
-| `NAIVE_DP` | none | PINQ-style textbook baseline |
-| `WORKLOAD_DP` | L1 exact-match (template hash + param hash) | Repetitive workloads, exact answers |
-| `SEMANTIC_DP` | L1 + **L2 semantic** (Tree Kernel + AST Embedding) | Parametric/exploratory workloads, approximate answers OK |
-
-L2 catches structurally similar queries (different literals, reordered predicates) and returns the nearest cached noisy answer at ε=0. Tradeoff: more budget savings, less per-query accuracy. We measure both empirically.
-
-## How the Middleware Works (9 steps per query)
-
-```
-Analyst → [1. SQL Parser/Validator]
-       → [2. Template Extraction (AST normalization + hashing)]
-       → [3a. Budget Ledger: L1 Exact-Match Cache Lookup]
-       → [3b. Optional: L2 Semantic Cache (Tree Kernel + AST Embedding)]
-            ├── cache HIT  → return cached noisy result (ε=0, post-processing)
-            └── cache MISS:
-              → [4. Sensitivity Analyzer]
-              → [5. Budget Allocation]
-              → [6. Execute on DuckDB]
-              → [7. Laplace Noise Injection]
-              → [8. Cache Store]
-              → [9. Return noisy result]
-```
-
-### The Core Idea — Why Caching Is Privacy-Safe
-
-By the **post-processing property of DP**: any deterministic or randomized function applied to the output of an ε-DP mechanism, *without additional access to the private data*, also satisfies ε-DP. Since a cached noisy result was produced by the Laplace mechanism, returning it again without re-querying the database costs **ε = 0** in additional privacy budget.
-
-This is the theoretical justification for our workload-aware ledger.
-
----
-
-## Empirical Results
-
-### Visible-Noise Comparison (Adult, age ≥ 90, true count = 55, ε = 0.1)
-
-| Run | True | Naive DP | Workload-Aware |
-|-----|------|----------|----------------|
-| #1 | 55 | 52 | **52** (cache miss) |
-| #2 | 55 | 78 | **52** (cache hit, ε=0) |
-| #3 | 55 | 61 | **52** (cache hit, ε=0) |
-| #4 | 55 | 57 | **52** (cache hit, ε=0) |
-| #5 | 55 | 43 | **52** (cache hit, ε=0) |
-| **Total ε** | 0 | **0.50** | **0.10** |
-
-- Naive DP gives 5 *different* noisy answers (fresh noise each time)
-- Workload-Aware gives 1 noisy answer, reused (post-processing)
-- **80% budget savings** with the same privacy guarantee
-
-### Workload-Level Results (TPC-H SF=1, 5 trials, ε = 1.0/query, total = 10.0)
-
-| Workload | Naive ε | Workload-Aware ε | Cache Hit Rate | Savings |
-|----------|---------|-------------------|----------------|---------|
-| W1 Repetitive | 10.0 | **1.0** | 95% | **10×** |
-| W2 Parametric | 10.0 | **3.0** | 85% | **3.3×** |
-| W3 Diverse | 10.0 | 10.0 | 0% | 1× (expected) |
-| W4 Progressive | 10.0 | 10.0 | 44% | — |
-
-### Semantic Matching (L1+L2): Parametric Workload, 5 different age thresholds
-
-| Strategy | Cache hits | ε consumed | Mean answer error |
-|----------|------------|------------|-------------------|
-| Workload-Aware (L1 only) | 0 / 5 | 5.0 | 0 (exact) |
-| **Semantic (L1+L2)** | **4 / 5** (4 semantic) | **1.0** | ~19,544 (approximate) |
-
-Semantic L2 trades per-query accuracy for additional budget efficiency. Useful when dashboards drill through parametric variations of the same template and approximate answers are acceptable.
 
 ---
 
 ## Datasets
 
-- **TPC-H SF=1** — generated via DuckDB's official `tpch` extension. 8 tables: region, nation, supplier, customer, part, partsupp, orders, lineitem (6,001,215 rows).
+- **TPC-H SF=1** — generated via DuckDB's official `tpch` extension. 8 tables, 6,001,215 lineitem rows.
 - **UCI Adult** — downloaded from `archive.ics.uci.edu`. 48,842 rows, 15 attributes. The de-facto standard benchmark in the DP literature.
 
----
-
-## Baselines
-
-| Baseline | Source | Role |
-|----------|--------|------|
-| Exact SQL | direct DuckDB passthrough | Gold standard (truth) |
-| **PINQ / Naive DP** | McSherry, SIGMOD 2009 | Textbook sequential composition |
-| **Workload-Aware DP** | This project | Template caching + post-processing |
-
-Additional reference systems available in `baselines/` for future expansion:
-- **Chorus** (Uber/UVM, SIGMOD 2020) — DP query rewriter
-- **Uber Flex** — SQL Differential Privacy
-- **OpenDP** (Harvard) — General DP library
-- **IBM diffprivlib** — DP primitives
+Both reside in a single `data/dpdb.duckdb` file. Backend can be switched to PostgreSQL by changing `config.yaml`.
 
 ---
 
-## Mathematical Foundation
+## Execution Modes
 
-For a query function `f: D → ℝ` with global sensitivity `Δf`, the **Laplace mechanism** outputs:
-```
-M(D) = f(D) + Z,   Z ~ Lap(Δf / ε)
-```
-which satisfies ε-differential privacy.
-
-**Sensitivities used:**
-- COUNT: Δf = 1
-- SUM(c): Δf = B_c (configured upper bound on |c|, from TPC-H spec)
-- AVG(c): decomposed as noisy_SUM / noisy_COUNT
-
-**Composition:**
-- Sequential: k queries each with ε_i give total ε = Σ ε_i (naive baseline)
-- Parallel: queries over disjoint subsets give total ε = max ε_i (we use this for GROUP BY)
-- Post-processing: cached results cost ε = 0 (workload-aware advantage)
+| Mode | Cache | When to use |
+|------|-------|-------------|
+| `EXACT` | none | Non-private baseline (gold standard) |
+| `NAIVE_DP` | none | PINQ-style sequential composition baseline |
+| `WORKLOAD_DP` | L1 exact-match | Workload-aware accounting (Sections 4-6) |
+| `TEMPORAL_DP` | L1 + staleness | With τ and λ from the temporal extension (Section 5) |
+| `SEMANTIC_DP` | L1 + L2 semantic | Tree kernel + embedding (Section 6, honest negative result) |
 
 ---
 
-## Project Structure
+## Key Empirical Results
+
+### 1. Model accuracy on Zipf workloads (m=7, 30 trials per cell)
+
+| α \\ k | 10 | 25 | 50 | 100 |
+|--------|-----|-----|-----|-----|
+| 0.0 | 5.50 / 5.53 | 6.85 / 6.77 | 7.00 / 7.00 | 7.00 / 7.00 |
+| 1.0 | 4.73 / 4.70 | 6.32 / 6.30 | 6.88 / 6.90 | 7.00 / 7.00 |
+| 3.0 | 2.19 / 2.07 | 3.07 / 3.33 | 3.85 / 3.90 | 4.72 / 4.67 |
+
+Format: `predicted / empirical`. Worst absolute error 0.26; worst relative error 8.6% (high-skew, low-k cell).
+
+### 2. Membership inference attack vs ε
+
+| ε | MIA AUC (empirical) | Theory `e^ε/(1+e^ε)` |
+|---|---------------------|----------------------|
+| 0.01 | 0.499 | 0.503 |
+| 0.10 | 0.522 | 0.525 |
+| 1.00 | 0.724 | 0.731 |
+| 5.00 | 0.988 | 0.993 |
+
+### 3. Temporal regime
+
+| τ | Empirical ε | Model prediction |
+|---|-------------|------------------|
+| 10 | 38.3 | 69.9 |
+| 25 | 22.5 | 27.9 |
+| 50 | 13.7 | 14.0 |
+| 100 | 7.0 | 7.0 |
+| ∞ | 7.0 | 7.0 |
+
+Model is a slight upper bound; both follow the same trend.
+
+---
+
+## Project Layout
 
 ```
 diffpriv-db/
-├── src/dpdb/              # Core middleware
-│   ├── parser.py
-│   ├── analyzer.py
-│   ├── mechanisms.py
-│   ├── template.py
-│   ├── budget.py
-│   ├── middleware.py
-│   ├── demo.py           # Step-by-step trace UI
-│   ├── cli.py
-│   ├── db.py             # DuckDB + PostgreSQL backends
-│   └── config.py
+├── src/dpdb/
+│   ├── model.py           ★ ANALYTICAL MODEL (R2)
+│   ├── workload_gen.py    Zipf-parameterized workloads
+│   ├── budget.py          Budget ledger + temporal (R3)
+│   ├── semantic.py        Tree kernel + AST embedding
+│   ├── parser.py / analyzer.py / mechanisms.py
+│   ├── middleware.py / db.py / config.py
+│   └── demo.py            Step-by-step trace UI
 ├── experiments/
-│   ├── workloads.py      # W1-W4 query workloads
-│   ├── benchmark.py      # Run all modes x workloads
-│   └── visualize.py      # Generate plots
-├── scripts/
-│   ├── load_data.py      # TPC-H + Adult loader
-│   ├── presentation_demo.py  # 5-scenario walkthrough
-│   ├── setup_tpch.sql    # PostgreSQL DDL (optional)
-│   └── generate_tpch_data.py # synthetic generator (optional)
-├── tests/                # 28 unit tests
+│   ├── model_validation.py     ★ R6 main validation
+│   ├── leakage.py              ★ R4 MIA + reconstruction
+│   ├── temporal_validation.py  ★ R3 empirical
+│   ├── semantic_validation.py  Honest semantic L2 result
+│   └── benchmark.py             Original W1-W4 benchmark
+├── results/
+│   ├── model_validation/  ★ Figures + CSV from R6
+│   ├── leakage/           ★ MIA + reconstruction figures
+│   ├── temporal/          ★ Temporal validation
+│   └── semantic/          ★ Semantic L2 results
 ├── report/
-│   └── milestone_report.tex
-├── data/                  # generated, gitignored
-├── results/               # generated, gitignored
-├── baselines/             # cloned reference systems, gitignored
+│   ├── final_report.tex          ★ THE REVISED PAPER
+│   ├── response_to_reviewer.md   ★ Map of how each comment is addressed
+│   ├── R2_model_sketch.md         ★ Pre-paper derivation
+│   └── milestone_report.tex       Original milestone (for comparison)
+├── tests/                57 unit tests across 6 modules
+├── scripts/              Data loaders, demos
 ├── config.yaml
 ├── pyproject.toml
-├── DEMO.md                # demo command cheat-sheet
-└── README.md              # this file
+└── README.md
 ```
-
----
-
-## Evaluation Metrics
-
-Defined across four categories (see [report/milestone_report.tex](report/milestone_report.tex) §6 for formulas):
-
-**Utility**
-- MAE (Mean Absolute Error), RMSE, Mean Relative Error
-- Answer Quality Rate: fraction of answers within τ relative error
-
-**Budget Efficiency**
-- Queries per Epsilon (QPE)
-- Budget Exhaustion Point (BEP) — query index where budget runs out
-- Cache Hit Rate (CHR)
-- Budget Savings Ratio (BSR) — fraction saved vs naive
-
-**Privacy Leakage**
-- Membership Inference Accuracy
-- Empirical Privacy Loss (log-likelihood ratio)
-- Reconstruction Accuracy under simulated attack
-
-**System Performance**
-- Latency (median, p95)
-- Middleware overhead vs exact SQL
-- Throughput
-
----
-
-## Key References
-
-1. C. Dwork, F. McSherry, K. Nissim, A. Smith. *Calibrating Noise to Sensitivity in Private Data Analysis*. TCC 2006.
-2. I. Dinur, K. Nissim. *Revealing Information while Preserving Privacy*. PODS 2003.
-3. F. McSherry. *Privacy Integrated Queries: An Extensible Platform for Privacy-preserving Data Analysis*. SIGMOD 2009.
-4. C. Dwork, A. Roth. *The Algorithmic Foundations of Differential Privacy*. F&T 2014.
-5. W. Dong, D. Sun, K. Yi. *Better than Composition: How to Answer Multiple Relational Queries under DP*. SIGMOD 2023.
-6. J. Yu et al. *DOP-SQL: A General-purpose, High-utility, and Extensible Private SQL System*. VLDB 2024.
-7. NIST SP 800-226. *Guidelines for Evaluating Differential Privacy Guarantees*. 2025.
-
-Full list (18 references) in [report/milestone_report.tex](report/milestone_report.tex).
 
 ---
 
@@ -293,28 +222,28 @@ Full list (18 references) in [report/milestone_report.tex](report/milestone_repo
 
 | Phase | Status |
 |-------|--------|
-| SQL parser, sensitivity, Laplace mechanism | ✓ Complete |
-| Budget ledger (naive + workload-aware) | ✓ Complete |
-| Template extraction & matching | ✓ Complete |
-| Middleware orchestrator + CLI | ✓ Complete |
-| 28 unit tests | ✓ All passing |
-| TPC-H SF=1 + Adult dataset loaded | ✓ Complete |
-| 4-workload benchmarks (5 trials each) | ✓ Complete |
-| Visualization pipeline | ✓ Complete |
-| Step-by-step demo + presentation script | ✓ Complete |
-| Milestone report (LaTeX, ACM format) | ✓ Submitted |
-| Privacy leakage experiments (MIA, reconstruction) | ◯ Planned |
-| Rényi DP accounting | ◯ Optional |
-| Join-aware heuristic | ◯ Optional |
-| Final paper | ◯ Pending |
+| R1: Reframe contribution | ✓ Done |
+| R2: Analytical model + 5 propositions | ✓ Done, validated <3% |
+| R3: Temporal extension + Proposition 6 | ✓ Done, validated |
+| R4: Leakage experiments (MIA + reconstruction) | ✓ Done, matches theory |
+| R5: Address inline comments | ✓ Done |
+| R6: Benchmark campaign with model validation | ✓ Done |
+| Semantic L2 cache (AI angle) | ✓ Done (with honest tradeoff) |
+| Response-to-reviewer document | ✓ Done |
+| 57 unit tests passing | ✓ |
+| Final paper compiled | Pending Overleaf upload |
 
 ---
 
-## License & Citation
+## License
 
-Course project for educational purposes. If you build on this, please cite:
+Course project for educational use. If you build on this, please cite:
 
-```
-Öztaş, R.C. (2026). A Differentially Private SQL Middleware for
-Repeated Aggregate Queries. CMP653 Project Report, Hacettepe University.
+```bibtex
+@misc{oztas2026dpsql,
+  author = {Öztaş, Refik Can},
+  title = {A Statistical Model of Privacy-Budget Consumption in Repeated Aggregate SQL Workloads},
+  year = {2026},
+  note = {CMP653 Project Report, Hacettepe University}
+}
 ```

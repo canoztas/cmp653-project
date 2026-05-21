@@ -1,0 +1,129 @@
+"""Tests for the R2 analytical model and R3 temporal extension."""
+
+import sys
+from pathlib import Path
+
+import numpy as np
+import pytest
+
+sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
+
+from dpdb.model import (
+    budget_savings_ratio,
+    deterministic_distribution,
+    expected_renoising_count,
+    expected_budget_temporal,
+    expected_budget_workload_aware,
+    expected_unique_queries,
+    mcdiarmid_tail_bound,
+    predict_utility_fixed_budget,
+    TemporalRegime,
+    uniform_distribution,
+    zipf_distribution,
+)
+
+
+class TestZipfDistribution:
+    def test_sums_to_one(self):
+        for m in [5, 10, 100]:
+            for alpha in [0.0, 0.5, 1.0, 2.0]:
+                p = zipf_distribution(m, alpha)
+                assert abs(p.sum() - 1.0) < 1e-9
+
+    def test_alpha_zero_is_uniform(self):
+        p = zipf_distribution(10, alpha=0.0)
+        assert np.allclose(p, 1.0 / 10)
+
+    def test_high_alpha_concentrates(self):
+        p = zipf_distribution(10, alpha=5.0)
+        assert p[0] > 0.9  # heavy concentration on rank-1
+
+
+class TestExpectedUniqueQueries:
+    def test_deterministic_limit(self):
+        """Limit A: perfect repetition gives E[u_k] = 1."""
+        p = deterministic_distribution(m=10)
+        for k in [1, 10, 100, 1000]:
+            assert expected_unique_queries(p, k) == pytest.approx(1.0, abs=1e-9)
+
+    def test_uniform_limit(self):
+        """Limit B: uniform with m large gives E[u_k] ≈ k for k << m."""
+        p = uniform_distribution(m=10000)
+        for k in [10, 50, 100]:
+            eu = expected_unique_queries(p, k)
+            # E[u_k] = m * (1 - (1 - 1/m)^k) ≈ k for k << m
+            assert abs(eu - k) < 1.0  # within 1 unit
+
+    def test_truncated_uniform(self):
+        """Limit C: uniform with m small, k large: E[u_k] -> m."""
+        p = uniform_distribution(m=5)
+        eu = expected_unique_queries(p, k=10000)
+        assert abs(eu - 5.0) < 1e-3
+
+
+class TestBudgetSavingsRatio:
+    def test_perfect_repetition_recovers_one_minus_one_over_k(self):
+        """The toy 1 - 1/k formula is the corner case of perfect repetition."""
+        p = deterministic_distribution(m=10)
+        for k in [10, 100, 1000]:
+            s = budget_savings_ratio(p, k)
+            assert s == pytest.approx(1.0 - 1.0 / k, abs=1e-9)
+
+    def test_uniform_large_m_gives_zero_savings(self):
+        """Naive limit: uniform over many templates gives no savings."""
+        p = uniform_distribution(m=10000)
+        s = budget_savings_ratio(p, k=100)
+        assert s < 0.01
+
+    def test_zipf_intermediate(self):
+        """Zipf interpolates between the two limits."""
+        for alpha, expected_savings_lower in [(0.0, 0.0), (1.0, 0.5), (3.0, 0.7)]:
+            p = zipf_distribution(m=10, alpha=alpha)
+            s = budget_savings_ratio(p, k=100)
+            assert s >= expected_savings_lower or alpha == 0.0
+
+
+class TestUtilityPrediction:
+    def test_naive_vs_workload_aware_under_fixed_budget(self):
+        p = zipf_distribution(m=10, alpha=2.0)
+        pred = predict_utility_fixed_budget(p, k=100, eps_total=10.0, sensitivity=1.0)
+        # workload-aware should give more per-query budget -> less error
+        assert pred.eps_q_workload_aware > pred.eps_q_naive
+        assert pred.expected_abs_error_workload_aware < pred.expected_abs_error_naive
+        assert pred.error_ratio > 1.0
+
+
+class TestConcentration:
+    def test_tail_bound_is_probability(self):
+        for k in [10, 100, 1000]:
+            for t in [0, 1, 5, 10]:
+                b = mcdiarmid_tail_bound(k, t)
+                assert 0.0 <= b <= 1.0
+
+    def test_tail_bound_decreases_with_t(self):
+        b1 = mcdiarmid_tail_bound(100, 1)
+        b2 = mcdiarmid_tail_bound(100, 10)
+        assert b2 < b1
+
+
+class TestTemporalExtension:
+    def test_renoising_count_increases_with_shorter_tau(self):
+        r_long = TemporalRegime(horizon_T=100, staleness_tolerance=100)
+        r_short = TemporalRegime(horizon_T=100, staleness_tolerance=10)
+        assert expected_renoising_count(r_short) > expected_renoising_count(r_long)
+
+    def test_renoising_with_updates(self):
+        r_no_updates = TemporalRegime(horizon_T=100, staleness_tolerance=50,
+                                      update_rate=0.0)
+        r_with_updates = TemporalRegime(horizon_T=100, staleness_tolerance=50,
+                                        update_rate=0.5, update_invalidation_prob=0.2)
+        assert expected_renoising_count(r_with_updates) > expected_renoising_count(r_no_updates)
+
+    def test_temporal_budget_recovers_static_in_limit(self):
+        """As tau -> infinity, temporal budget reduces to static workload-aware."""
+        p = zipf_distribution(m=10, alpha=1.0)
+        static_budget = expected_budget_workload_aware(p, k=100, eps_q=1.0)
+        regime_static = TemporalRegime(horizon_T=100, staleness_tolerance=1e9)
+        temporal_budget = expected_budget_temporal(p, k_total=100, eps_q=1.0, regime=regime_static)
+        # With tau >> T, only one re-noising is needed
+        assert temporal_budget == pytest.approx(static_budget, rel=0.01)

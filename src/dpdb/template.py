@@ -18,6 +18,9 @@ class CachedResult:
     rows: list[tuple]
     epsilon_used: float
     query_sql: str
+    # Temporal metadata (R3 extension)
+    issued_at: float = 0.0    # logical time when this noisy result was released
+    invalidated: bool = False  # set True by an update event affecting this entry
 
 
 def extract_template(parsed: ParsedQuery) -> str:
