@@ -9,14 +9,23 @@ A differentially private SQL middleware built around a **closed-form analytical 
 
 ## TL;DR — Headline Results
 
-### Model validation (R6)
-On 720 trials across a Zipf workload grid (α ∈ {0, 0.5, 1, 1.5, 2, 3} × k ∈ {10, 25, 50, 100}):
+### Full Benchmark Campaign (R6 — %100+ executed)
+**4,530 trials, ~150K queries** across 6 sweeps:
 
-- Predicted `E[u_k]` matches empirical mean within **<3% in 22 of 24 cells**.
-- Predicted budget savings `S(k) = 1 - E[u_k]/k` matches within **<2% in 23 of 24 cells**.
-- Two model limits empirically confirmed:
-  - α → ∞ (perfect repetition): `S(k) = 1 − 1/k` ✓
-  - α → 0 (uniform): `S(k) → 0` ✓
+| Sweep | Trials | Result |
+|-------|--------|--------|
+| Main grid (α × k) | 720 | **21/24 cells <3%** error (worst 8.6% at high α, small k) |
+| Extended α (up to 10) | 240 | All cells <2% error |
+| Epsilon sweep (ε ∈ {0.1, 0.5, 1, 2}) | 480 | Confirms model is ε-independent |
+| Large k (up to 500) | 75 | Model saturates correctly at m=7 |
+| **SF=1 vs SF=10** (60M rows) | 480 | Model is **dataset-scale-independent** |
+| Full benchmark (W1-W4 × 4 ε × 3 modes) | 2160 | W1: 10× savings, W4: 0× (as predicted) |
+
+Two model limits empirically confirmed:
+- α → ∞ (perfect repetition): `S(k) = 1 − 1/k` ✓
+- α → 0 (uniform): `S(k) → 0` ✓
+
+The model is **scale-independent** (SF=1 ≡ SF=10 within 0.03 units) and **ε-independent** (validated across 4 ε values).
 
 ### Leakage analysis (R4)
 - Membership Inference AUC tracks the theoretical bound `exp(ε)/(1+exp(ε))` within ≤1%.
@@ -98,28 +107,30 @@ A ~1.4 KLOC Python prototype with 57 passing unit tests:
 # 1. Install
 pip install -e ".[dev]"
 
-# 2. Generate data
+# 2. Generate data (SF=1 ~30s, SF=10 ~75s with 60M rows)
 python3 scripts/load_data.py --sf 1.0
+python3 scripts/load_sf10.py   # optional, for cross-scale validation
 
 # 3. Run the analytical model self-check (verifies limits)
 python3 -m dpdb.model
 
-# 4. Run the model-validation benchmark (720 trials, ~3 min)
-python3 experiments/model_validation.py --trials 30
+# 4. Run experiments
+python3 experiments/model_validation.py --trials 30        # main alpha sweep
+python3 experiments/extended_sweeps.py --trials 30         # alpha-up-to-10, eps sweep, large k
+python3 experiments/sf10_validation.py --trials 30         # SF=1 vs SF=10
+python3 experiments/full_campaign.py --trials 30 --k 100   # 6 workloads x 4 eps x 3 modes
+python3 experiments/leakage.py                              # MIA + reconstruction
+python3 experiments/temporal_validation.py --trials 30     # tau + lambda sweep
+python3 experiments/semantic_validation.py --trials 30     # tree kernel + AST embedding
 
-# 5. Run the leakage experiments
-python3 experiments/leakage.py
+# 5. Aggregate all results
+python3 experiments/aggregate_all_results.py
+# -> results/REPORT.md  + results/ALL_RESULTS.csv
 
-# 6. Run the temporal validation
-python3 experiments/temporal_validation.py --trials 10
-
-# 7. Run the semantic L2 experiment
-python3 experiments/semantic_validation.py --trials 5
-
-# 8. Run the live demo
+# 6. Run the live demo
 python3 scripts/presentation_demo.py
 
-# 9. Run unit tests
+# 7. Run unit tests
 python3 -m pytest tests/ -v
 ```
 
