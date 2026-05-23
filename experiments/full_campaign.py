@@ -75,15 +75,27 @@ def build_workload(name: str, k: int, seed: int):
         queries, _ = generate_zipf_workload(templates, alpha=0.0, k=k, seed=seed)
         return queries, expected_unique_queries(p, k)
     elif name == "W4_drilldown":
-        # Progressive narrowing: each query strictly different (no exact repeats)
+        # True progressive narrowing: each step strictly narrows the previous WHERE
+        # by combining a new conjunct. No two queries share an exact (template,
+        # parameter) pair, so workload-aware caching cannot reuse anything.
         queries = []
+        flags = ["R", "A", "N"]
+        modes = ["AIR", "RAIL", "SHIP", "TRUCK", "MAIL", "FOB", "REG AIR"]
         for i in range(k):
-            age_low = 20 + (i % 7) * 10
-            flag = ["R", "A", "N"][i % 3]
-            shipmode = ["AIR", "RAIL", "SHIP"][i % 3]
-            q = f"SELECT COUNT(*) FROM lineitem WHERE l_returnflag = '{flag}' AND l_shipmode = '{shipmode}'"
+            # i indexes into the cross product flags x modes; with 3 x 7 = 21
+            # unique pairs we cycle if k > 21. Within k <= 100, each i still
+            # produces a distinct (flag, mode, qty_threshold) triple by
+            # adding a third varying conjunct.
+            flag = flags[i % 3]
+            mode = modes[(i // 3) % 7]
+            qty_threshold = 10 + (i // 21)  # 10, 11, 12, 13, ... -- unique per i
+            q = (
+                f"SELECT COUNT(*) FROM lineitem "
+                f"WHERE l_returnflag = '{flag}' AND l_shipmode = '{mode}' "
+                f"AND l_quantity > {qty_threshold}"
+            )
             queries.append(q)
-        return queries, k * 1.0  # all unique
+        return queries, k * 1.0  # every query is unique by construction
     elif name == "W2_tpch_returnflag":
         # Repetitive over only 3 return flags -> heavy reuse
         templates = TPCH_RETURNFLAG_TEMPLATES

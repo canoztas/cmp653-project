@@ -5,8 +5,14 @@
 \usepackage{amssymb}
 \usepackage{booktabs}
 \usepackage{multirow}
+\usepackage{graphicx}
+\usepackage{subcaption}
 \usepackage{algorithm}
 \usepackage{algorithmic}
+% Place figures relative to the report directory; experiments save PNGs that
+% live in ../results/. Set graphicspath so \includegraphics needs only the
+% filename plus subfolder.
+\graphicspath{{../results/}}
 \usepackage{listings}
 \usepackage{xcolor}
 
@@ -45,7 +51,7 @@
 \email{N25142279}
 
 \begin{abstract}
-Repeated analytical workloads---dashboards, drill-downs, parametric filter sweeps---dominate practical SQL usage, but the privacy literature has largely treated each query in isolation. We present an analytical model that relates workload structure (template repetition skew, group cardinality, temporal staleness) to privacy budget consumption and utility, and instantiate it inside a differentially private SQL middleware over PostgreSQL/DuckDB and TPC-H. The model gives a closed-form expression for the expected budget under workload-aware accounting, $\E[\eps_{\mathrm{wa}}(k)] = \eps_q \cdot \E[u_k]$, where $\E[u_k] = \sum_{i=1}^m \bigl[1 - (1-p_i)^k\bigr]$. Two limits of this expression recover existing intuition: deterministic repetition reduces to the toy $1-1/k$ savings ratio, and uniform sampling over many templates recovers naive sequential composition. A temporal extension with staleness tolerance $\tau$ and Poisson update rate $\lambda$ couples budget consumption with data freshness. The model is empirically validated on Zipf-parameterized workloads ($\alpha \in \{0,\ldots,3\}$) with 30 trials per cell, agreeing with the empirical mean within $<3\%$ in 22 of 24 cells. We complement the model with a leakage analysis (membership inference AUC and differencing-attack reconstruction) whose empirical curves match the theoretical $e^{\eps}/(1+e^{\eps})$ MIA bound and the $2/\eps$ reconstruction scaling. The middleware itself is a 1.4 KLOC Python prototype with 57 passing unit tests; exact-repeat caching is treated as a corollary of the model's $\alpha\to\infty$ limit rather than as a contribution.
+Repeated analytical workloads---dashboards, drill-downs, parametric filter sweeps---dominate practical SQL usage, but the privacy literature has largely treated each query in isolation. We present an analytical model that relates workload structure (template repetition skew, group cardinality, temporal staleness) to privacy budget consumption and utility, and instantiate it inside a differentially private SQL middleware over PostgreSQL/DuckDB and TPC-H. The model gives a closed-form expression for the expected budget under workload-aware accounting, $\E[\eps_{\mathrm{wa}}(k)] = \eps_q \cdot \E[u_k]$, where $\E[u_k] = \sum_{i=1}^m \bigl[1 - (1-p_i)^k\bigr]$. Two limits of this expression recover existing intuition: deterministic repetition reduces to the toy $1-1/k$ savings ratio, and uniform sampling over many templates recovers naive sequential composition. A temporal extension with staleness tolerance $\tau$ and Poisson update rate $\lambda$ couples budget consumption with data freshness. The model is empirically validated on a $4{,}530$-trial campaign covering Zipf-parameterized workloads ($\alpha \in \{0,\ldots,10\}$), six workload families (W1--W4 plus two TPC-H parametric variants), four per-query privacy parameters ($\eps_q \in \{0.1, 0.5, 1.0, 2.0\}$), and TPC-H scale factors SF=1 and SF=10 (60M lineitem rows). The model's predictions match empirical means within $<3\%$ in 21 of 24 main-grid cells and within $0.03$ units across the SF=1/SF=10 cross-scale test. We complement the model with three leakage experiments---single-query MIA, differencing-style reconstruction on a five-level drill-down, and shadow-model MIA across W1--W4---whose empirical curves track the theoretical bounds where they are tight and reveal an honest gap where the cumulative-budget bound is loose. The middleware is a $\sim$1.4 KLOC Python prototype with 57 passing unit tests; exact-repeat caching is treated as a corollary of the model's $\alpha\to\infty$ limit rather than as a contribution.
 \end{abstract}
 
 \maketitle
@@ -68,7 +74,7 @@ Specifically, we contribute:
     \item A statistical model (Section~\ref{sec:model}) that, given a workload distribution $\{p_i\}$ over query templates and a workload length $k$, yields closed-form predictions for the expected unique-query count $\E[u_k]$, the workload-aware budget consumption $\E[\eps_{\mathrm{wa}}(k)]$, and the budget savings ratio $S(k)$. Five propositions cover (i) $\E[u_k]$, (ii) budget savings, (iii) the Zipf-parameterized case, (iv) concentration via McDiarmid's inequality, and (v) per-query utility under a fixed total budget.
     \item A temporal extension (Section~\ref{sec:temporal}) that introduces a staleness tolerance $\tau$ and a Poisson update rate $\lambda$, producing $\E[\eps_{\mathrm{temp}}(T)]$ over a time horizon $T$. The static regime, the bounded-staleness regime, and the update-driven regime are continuous slidings of the same expression.
     \item A middleware (Section~\ref{sec:system}) that instantiates the model. The system is implemented in Python on top of DuckDB (with an alternative PostgreSQL backend), supports a single-table aggregate SQL subset, exposes four execution modes (exact, naive DP, workload-aware DP, temporal DP), and ships with 57 unit tests.
-    \item Empirical validation (Section~\ref{sec:eval}) on Zipf-parameterized workloads at TPC-H scale factor SF=1 and on the UCI Adult dataset. Across $6 \times 4 = 24$ $(\alpha, k)$ cells with 30 trials each, the model's prediction of $\E[u_k]$ matches the empirical mean within $<3\%$ in 22 of 24 cells.
+    \item Empirical validation (Section~\ref{sec:eval}) on Zipf-parameterized workloads at TPC-H scale factor SF=1 (and a cross-scale check at SF=10 with 60M lineitem rows) plus the UCI Adult dataset. The full experimental campaign comprises six sweeps totaling $4{,}530$ trials. On the main grid ($6\times 4 = 24$ $(\alpha, k)$ cells, 30 trials each), the model's prediction of $\E[u_k]$ matches the empirical mean within $<3\%$ in 21 of 24 cells.
     \item A leakage analysis (Section~\ref{sec:leakage}) that quantifies membership-inference AUC and differencing-attack reconstruction error as a function of $\eps$, against the theoretical bounds $e^{\eps}/(1+e^{\eps})$ and $2/\eps$ respectively.
 \end{enumerate}
 
@@ -325,7 +331,21 @@ $\alpha\backslash k$ & 10 & 25 & 50 & 100 \\
 
 \paragraph{Budget savings $S(k)$.} The savings ratio is even more tightly predicted because it is computed directly from \emph{measured} budget consumption, which is the deterministic dual of $\E[u_k]$ in our setup. Empirical $S(k)$ matches the model within $<2\%$ in 23 of 24 cells.
 
-\paragraph{Limit behaviour.} Figure~3 (\texttt{model\_validation\_limits.png}) shows the toy $1-1/k$ curve bracketing the high-$\alpha$ end and the $S=0$ line bracketing the uniform end; the empirical savings curves interpolate smoothly between them, consistent with Proposition~\ref{prop:zipf}.
+\paragraph{Limit behaviour.} Figure~\ref{fig:limits} shows the toy $1-1/k$ curve bracketing the high-$\alpha$ end and the $S=0$ line bracketing the uniform end; the empirical savings curves interpolate smoothly between them, consistent with Proposition~\ref{prop:zipf}.
+
+\begin{figure}[h]
+\centering
+\includegraphics[width=\columnwidth]{model_validation/model_validation_limits.png}
+\caption{Budget savings ratio $S(k)$ as a function of workload length $k$, for several Zipf $\alpha$. Dashed curves: model prediction. Markers: empirical mean over 30 trials. The high-$\alpha$ curves approach $1-1/k$; the $\alpha=0$ curve sits near $0$ until $k$ approaches $m$. Source: \texttt{experiments/model\_validation.py}.}
+\label{fig:limits}
+\end{figure}
+
+\begin{figure}[h]
+\centering
+\includegraphics[width=\columnwidth]{model_validation/model_validation_unique.png}
+\caption{Model-vs-empirical unique-query count for the main $(\alpha, k)$ grid. Markers should land on the dashed identity line if the model is accurate. Source: \texttt{experiments/model\_validation.py}.}
+\label{fig:unique}
+\end{figure}
 
 \paragraph{Extended $\alpha$ sweep ($\alpha$ up to 10, $k=200$).} The model remains accurate over the wider range:
 
@@ -359,26 +379,64 @@ The $\alpha=10$ row is essentially Limit A: when one template dominates, only $\
 \toprule
 Workload & Mode & $\eps$ used & Queries & MAE & Cache hits \\
 \midrule
-\multirow{3}{*}{W1 Repetitive} & NAIVE & 20.0 & 20/100 & --- & 0 \\
-                                & WORK  & 3.0  & 100/100 & 1.81 & 97 \\
-                                & TEMP  & 3.0  & 100/100 & 0.93 & 97 \\
+\multirow{3}{*}{W1 Repetitive}      & NAIVE & 100.0 & 100/100 & 0.94 & 0 \\
+                                     & WORK  & 1.0   & 100/100 & 1.10 & 99 \\
+                                     & TEMP  & 1.0   & 100/100 & 1.27 & 99 \\
 \midrule
-\multirow{3}{*}{W2 Zipf $\alpha=1$} & NAIVE & 20.0 & 20/100 & --- & 0 \\
-                                     & WORK  & 7.0 & 100/100 & 1.05 & 93 \\
-                                     & TEMP  & 7.0 & 100/100 & 1.05 & 93 \\
+\multirow{3}{*}{W2 TPC-H returnflag} & NAIVE & 100.0 & 100/100 & 0.94 & 0 \\
+                                     & WORK  & 3.0   & 100/100 & 1.12 & 97 \\
+                                     & TEMP  & 3.0   & 100/100 & 0.89 & 97 \\
 \midrule
-\multirow{3}{*}{W3 Uniform} & NAIVE & 20.0 & 20/100 & --- & 0 \\
-                             & WORK  & 7.0 & 100/100 & 1.32 & 93 \\
-                             & TEMP  & 7.0 & 100/100 & 1.32 & 93 \\
+\multirow{3}{*}{W2 TPC-H priority}   & NAIVE & 100.0 & 100/100 & 0.93 & 0 \\
+                                     & WORK  & 5.0   & 100/100 & 0.96 & 95 \\
+                                     & TEMP  & 5.0   & 100/100 & 1.21 & 95 \\
 \midrule
-\multirow{3}{*}{W4 Drill-down} & NAIVE & 20.0 & 20/100 & 0.95 & 0 \\
-                                & WORK  & 20.0 & 20/100 & 0.95 & 0 \\
-                                & TEMP  & 20.0 & 20/100 & 0.95 & 0 \\
+\multirow{3}{*}{W2 Zipf $\alpha=1$}  & NAIVE & 100.0 & 100/100 & 0.93 & 0 \\
+                                     & WORK  & 7.0   & 100/100 & 0.98 & 93 \\
+                                     & TEMP  & 7.0   & 100/100 & 0.84 & 93 \\
+\midrule
+\multirow{3}{*}{W3 Uniform}          & NAIVE & 100.0 & 100/100 & 0.96 & 0 \\
+                                     & WORK  & 7.0   & 100/100 & 1.04 & 93 \\
+                                     & TEMP  & 7.0   & 100/100 & 1.10 & 93 \\
+\midrule
+\multirow{3}{*}{W4 Drill-down}       & NAIVE & 100.0 & 100/100 & 0.95 & 0 \\
+                                     & WORK  & 100.0 & 100/100 & 0.95 & 0 \\
+                                     & TEMP  & 100.0 & 100/100 & 0.95 & 0 \\
 \bottomrule
 \end{tabular}
 \end{center}
 
+\noindent The savings ratios per workload are: W1 = $100\times$, W2 (returnflag) = $33\times$, W2 (priority) = $20\times$, W2 Zipf-$\alpha{=}1$ = $14.3\times$, W3 (uniform) = $14.3\times$, W4 = $1\times$ (no savings, as the model predicts). The W2--W3 cells confirm the structural prediction that workload-aware budget consumption equals $\eps_q \cdot E[u_k]$: the empirical $u_k$ saturates near $m$ (the pool size) at $k=100$, and the budget is exactly $\eps_q \cdot m$ in each case.
+
 W4 confirms the honest negative result: when queries are genuinely unique, no execution mode saves budget over naive. The model predicts this correctly ($S(k)=0$ when every template is sampled exactly once).
+
+\begin{figure}[h]
+\centering
+\includegraphics[width=\columnwidth]{full_campaign/campaign_budget_SF1.png}
+\caption{Privacy budget consumption per workload and execution mode at $\eps_q=1$, total budget $100$, $k=100$ ($N=30$ trials per cell, error bars omitted for clarity; per-cell variance reported in \texttt{REPORT.md}). Source: \texttt{experiments/full\_campaign.py}.}
+\label{fig:campaign-budget}
+\end{figure}
+
+\begin{figure}[h]
+\centering
+\includegraphics[width=\columnwidth]{full_campaign/campaign_model_validation_SF1.png}
+\caption{Cross-workload model validation: predicted $\E[u_k]$ vs empirical mean over the full benchmark grid (six workloads $\times$ four epsilons). Points cluster on the identity line, confirming that the model accurately predicts realised budget consumption across all workload structures.}
+\label{fig:campaign-model}
+\end{figure}
+
+\begin{figure}[h]
+\centering
+\includegraphics[width=\columnwidth]{sf10/sf10_validation.png}
+\caption{Cross-scale validation: same model, two TPC-H scales (SF=1 with 6M and SF=10 with 60M lineitem rows). Empirical means coincide within $0.03$ units. Source: \texttt{experiments/sf10\_validation.py}.}
+\label{fig:sf10}
+\end{figure}
+
+\begin{figure}[h]
+\centering
+\includegraphics[width=\columnwidth]{temporal/temporal_validation.png}
+\caption{Temporal extension validation. Left: $\tau$-sweep with $\lambda=0$. Right: $\lambda$-sweep with $\tau$ large. Model prediction (dashed) and empirical mean (markers, $N=30$) agree on the trend; the model is a tight upper envelope at large $\tau$ and a conservative upper bound otherwise. Source: \texttt{experiments/temporal\_validation.py}.}
+\label{fig:temporal}
+\end{figure}
 
 \paragraph{Research question answered.} Yes: a closed-form model parameterized by $(\{p_i\}, k)$ accurately predicts the realized budget consumption under workload-aware accounting, and the $1-1/k$ rule observed in the milestone is recovered as the high-skew corner case. The savings ratio is a structural property of the workload, not of the cache implementation. The model is independent of dataset scale (SF=1 vs SF=10) and of per-query privacy parameter $\eps_q$.
 
@@ -476,6 +534,20 @@ $\eps$ & Mean abs.\ err & p95 & Theory $\sqrt{2}\cdot\sqrt{2}/\eps$ \\
 \end{center}
 
 Errors scale as $\sqrt{2}/\eps$ per pair-difference, as expected from the standard deviation of the difference of two Laplace variables.
+
+\begin{figure}[h]
+\centering
+\includegraphics[width=\columnwidth]{leakage/mia_auc_vs_eps.png}
+\caption{Membership inference attack AUC for a single noisy COUNT release as a function of $\eps$, against the theoretical bound $e^\eps/(1+e^\eps)$. Empirical curves track theory within $\leq 1\%$ across three target subpopulation sizes. Source: \texttt{experiments/leakage.py}.}
+\label{fig:mia-single}
+\end{figure}
+
+\begin{figure}[h]
+\centering
+\includegraphics[width=\columnwidth]{workload_leakage/workload_mia_auc.png}
+\caption{Shadow-model MIA AUC across W1--W4 at $\eps_q\in\{0.1,0.5,1.0,2.0\}$. Even with $32$ cells $\times 60$ shadow runs and a logistic-regression classifier observing the full $k=50$ query sequence, empirical AUC stays well below the cumulative-budget upper bound (which approaches $1.0$). Most queries do not directly probe the target tuple. Source: \texttt{experiments/workload\_leakage.py}.}
+\label{fig:mia-workload}
+\end{figure}
 
 \paragraph{Implication for the model.} Both attacks degrade in the same regime in which the model predicts more efficient budget consumption (high skew, low $\eps_q$). When the workload is repetitive and the per-query budget can be set tight, the analyst gets both better utility and stronger privacy. When the workload is a drill-down (W4), the model correctly predicts that workload-aware caching does \emph{not} help and the reconstruction attack accordingly succeeds at any practical $\eps$.
 
