@@ -3,125 +3,158 @@
 **CMP653 Database Management Systems Project — Hacettepe University**
 Author: Refik Can Öztaş (N25142279)
 
-A differentially private SQL middleware built around a **closed-form analytical model** that predicts privacy budget consumption and per-query utility from workload structure (template repetition skew, group cardinality, temporal staleness). The model recovers the toy `1 − 1/k` budget-savings result as the high-skew corner case and naive sequential composition as the uniform-distribution limit. The middleware is the experimental apparatus that validates the model.
-
----
-
-## TL;DR — Headline Results
-
-### Full Benchmark Campaign (R6 — %100+ executed)
-**4,530 trials, ~150K queries** across 6 sweeps:
-
-| Sweep | Trials | Result |
-|-------|--------|--------|
-| Main grid (α × k) | 720 | **21/24 cells <3%** error (worst 8.6% at high α, small k) |
-| Extended α (up to 10) | 240 | All cells <2% error |
-| Epsilon sweep (ε ∈ {0.1, 0.5, 1, 2}) | 480 | Confirms model is ε-independent |
-| Large k (up to 500) | 75 | Model saturates correctly at m=7 |
-| **SF=1 vs SF=10** (60M rows) | 480 | Model is **dataset-scale-independent** |
-| Full benchmark (W1-W4 × 4 ε × 3 modes) | 2160 | W1: 10× savings, W4: 0× (as predicted) |
-
-Two model limits empirically confirmed:
-- α → ∞ (perfect repetition): `S(k) = 1 − 1/k` ✓
-- α → 0 (uniform): `S(k) → 0` ✓
-
-The model is **scale-independent** (SF=1 ≡ SF=10 within 0.03 units) and **ε-independent** (validated across 4 ε values).
-
-### Leakage analysis (R4)
-- Membership Inference AUC tracks the theoretical bound `exp(ε)/(1+exp(ε))` within ≤1%.
-- Drill-down reconstruction error scales as `~2/ε`, as predicted by the difference of two Laplace variables.
-
-### Temporal coupling (R3)
-- Staleness tolerance τ → ∞: budget reduces to static case `eps_q × E[u_k]` ✓
-- Update rate λ > 0: budget grows linearly with `T·λ·q_inv`, matching the analytical prediction within 15%.
+A Python middleware that intercepts aggregate SQL queries (COUNT, SUM, AVG), adds calibrated Laplace noise for differential privacy, and uses **a closed-form analytical model of budget consumption** to:
+1. predict workload cost before deployment,
+2. drive a model-based **adaptive budget allocator**,
+3. cross-check empirical privacy leakage against theoretical bounds.
 
 ---
 
 ## What This Project Is
 
-The milestone version framed exact-repeat caching as the contribution. The reviewer pointed out that caching is a trivial consequence of DP's post-processing property. The final version makes the **analytical model** the contribution; caching is the mechanism that the model predicts the savings of.
+The milestone version framed exact-repeat caching as the contribution. The instructor (correctly) flagged that as a trivial consequence of DP's post-processing property. The final version reframes:
 
-### The Model in One Equation
+> **Caching is a mechanism. The contribution is the *analytical model that predicts when and by how much caching helps*, instantiated in a working middleware over PostgreSQL/DuckDB and TPC-H/Adult.**
 
-For a workload of `k` queries drawn i.i.d. from a template distribution {p_i}:
-```
-E[u_k] = Σ_i [1 − (1 − p_i)^k]                    (Proposition 1)
-E[ε_workload-aware(k)] = ε_q × E[u_k]              (Proposition 2)
-Budget savings: S(k) = 1 − E[u_k] / k             (Proposition 2)
-```
+Three concrete deliverables sit under that frame:
 
-Two limits recover existing intuition:
-- **Perfect repetition** (p_1 = 1): `S(k) = 1 − 1/k` (the toy formula, now a corner case)
-- **Uniform, m → ∞**: `S(k) → 0` (naive composition)
+| # | Deliverable | Lives in | Novelty |
+|---|-------------|----------|---------|
+| 1 | **Analytical model** linking workload structure → privacy budget | `src/dpdb/model.py` + `report/final_report.tex` §4 | Adapts occupancy/coupon-collector theory to DP-SQL budget; closed-form for arbitrary Zipf $\alpha$ |
+| 2 | **Temporal extension** with staleness $\tau$ + update rate $\lambda$ | `src/dpdb/budget.py` (temporal hooks) + paper §5 | First DP-SQL formulation that couples budget with data freshness |
+| 3 | **Predictive budget allocator** built on the model | `src/dpdb/predictive.py` + paper §9 | First DP-SQL mechanism that adapts $\eps_q$ at runtime from a learned workload model |
 
-Plus a concentration bound (McDiarmid's inequality) and a utility prediction under fixed total budget.
+Plus three honest experimental findings (the kind of negative results that make a paper credible):
 
-### The Temporal Extension
-
-```
-E[ε_temporal(T)] = ε_q × E[u_k_total] × N(T, τ, λ, q)
-N(T, τ, λ, q) = ⌈T/τ⌉ + T·λ·q              (Proposition 6)
-```
-
-Three regimes: static (τ → ∞), bounded staleness, update-driven Poisson.
+| # | Finding | Why it's interesting |
+|---|---------|-----------------------|
+| A | **Semantic L2 cache via Tree Kernel + AST Embedding** gives 90% budget savings BUT wrong answers when the matched queries are not alpha-equivalent | First measured trade-off; warns against naive "AI-powered DP cache" designs |
+| B | **Workload-level shadow-model MIA AUC** stays at 0.15–0.58, well below the cumulative-$\eps$ bound of 1.0 | Cumulative-budget upper bounds are loose for realistic multi-query attacks; signal-to-noise is governed by per-query $\eps$, not total |
+| C | **Model is dataset-scale-independent** (SF=1 vs SF=10 within 0.03 units) and **$\eps_q$-independent** (cancels structurally) | The model captures workload structure, not data scale—useful for capacity planning before deployment |
 
 ---
 
-## Reviewer Feedback → Revision Map
+## Headline Numbers
 
-| Brief item | What it asked for | Where addressed |
-|------------|-------------------|-----------------|
-| R1 | Reframe central contribution | `report/final_report.tex` §1, abstract |
-| R2 | Statistical budget vs DP model | `src/dpdb/model.py`, `report/R2_model_sketch.md`, §4 |
-| R3 | Couple budget with temporality | `src/dpdb/budget.py` (staleness + updates), §5 Algorithm 1 |
-| R4 | Execute leakage experiments | `experiments/leakage.py`, §7 |
-| R5 | Address inline comments | §3 (AVG), §4 (1-1/k as corner case), §5 (Algorithm 1) |
-| R6 | Run benchmark campaign | `experiments/{model,semantic,temporal}_validation.py`, §6 |
+Full benchmark campaign: **4,530 trials, ~150K queries, six experimental sweeps**.
 
-Full mapping in [`report/response_to_reviewer.md`](report/response_to_reviewer.md).
+### Budget consumption (k=100, total ε=100, 30 trials/cell)
 
----
+| Workload | Naive ε | Workload-aware ε | Savings | Predicted by model |
+|----------|---------|-------------------|---------|----------------------|
+| W1 Repetitive (1 template) | 100.0 | 1.0 | **100×** | $E[u_k]=1$, $S(k)=1-1/k$ |
+| W2 TPC-H returnflag (Zipf α=0.5) | 100.0 | 3.0 | 33× | $E[u_k]\approx 3$ |
+| W2 TPC-H priority (Zipf α=1.0) | 100.0 | 5.0 | 20× | $E[u_k]\approx 5$ |
+| W2 Adult Zipf α=1.0 | 100.0 | 7.0 | 14.3× | $E[u_k]\approx 7$ |
+| W3 Uniform | 100.0 | 7.0 | 14.3× | $E[u_k]= m=7$ (saturated) |
+| W4 Drill-down (no repeats) | 100.0 | 100.0 | 1× | $E[u_k]=k$ (model correctly predicts no savings) |
 
-## Implementation
+### Model accuracy
 
-A ~1.4 KLOC Python prototype with 57 passing unit tests:
+- **Main grid (α × k, 30 trials × 24 cells):** model matches empirical mean within `<3%` in **21/24 cells**
+- **Cross-scale (SF=1 vs SF=10, 60M lineitem rows):** identical empirical $E[u_k]$ within 0.03 units
+- **Epsilon sweep (ε ∈ {0.1, 0.5, 1.0, 2.0}):** model is $\eps_q$-independent, confirmed across 480 trials
 
-| Component | File | Purpose |
-|-----------|------|---------|
-| **Analytical model** | `src/dpdb/model.py` | Zipf workload, E[u_k], savings, McDiarmid, utility, temporal |
-| SQL parser/validator | `src/dpdb/parser.py` | sqlglot-based, single-table aggregates only |
-| Sensitivity analyzer | `src/dpdb/analyzer.py` | COUNT/SUM/AVG sensitivity with config bounds |
-| Laplace mechanism | `src/dpdb/mechanisms.py` | Calibrated noise + GROUP BY parallel composition |
-| **Budget ledger** | `src/dpdb/budget.py` | Naive, workload-aware, semantic-aware, temporal modes |
-| Template matching | `src/dpdb/template.py` | AST normalization + hashing for L1 cache |
-| **Semantic matching** | `src/dpdb/semantic.py` | Tree kernel (Collins-Duffy 2001) + AST embedding (CodeBERT-style) |
-| **Zipf workload gen** | `src/dpdb/workload_gen.py` | Real TPC-H/Adult templates sampled from Zipf(α) |
-| Middleware orchestrator | `src/dpdb/middleware.py` | 5 execution modes |
-| Step-by-step demo | `src/dpdb/demo.py` | Visual trace UI |
+### Privacy leakage
+
+- **Single-query MIA AUC** matches theoretical $e^\eps/(1+e^\eps)$ within ≤1%
+- **Reconstruction error** scales as $2/\eps$ as predicted
+- **Workload-level shadow-model MIA AUC** = 0.15–0.58 (much lower than the cumulative bound 1.0)
 
 ---
 
-## Reproducibility: figure-to-script mapping
+## Project Components
 
-Every figure and table in `report/final_report.tex` is reproducible from a single script in `experiments/`. The brief asked for this mapping explicitly.
+The repository is a complete artifact: every figure, table, and number in the paper has a script that produces it.
+
+```
+src/dpdb/
+  model.py          R2 analytical model: E[u_k], savings ratio, temporal extension
+  predictive.py     Online predictive budget allocator built on the model
+  semantic.py       AI/AST layer: Tree Kernel + sentence-transformer embedding
+  budget.py         Privacy budget ledger (4 strategies, temporal hooks)
+  middleware.py     Orchestrator with 6 execution modes
+  parser.py         sqlglot-based SQL parser/validator
+  analyzer.py       Sensitivity analysis (COUNT=1, SUM/AVG=bound)
+  mechanisms.py     Laplace mechanism
+  template.py       Exact-match template extraction & hashing
+  db.py             DuckDB + PostgreSQL backends
+  demo.py           Step-by-step REPL trace
+  cli.py            Interactive query interface
+
+experiments/
+  model_validation.py        Main alpha-grid validation (720 trials)
+  extended_sweeps.py         Alpha up to 10, eps sweep, k up to 500
+  sf10_validation.py         SF=1 vs SF=10 cross-scale validation
+  full_campaign.py           6 workloads × 4 eps × 3 modes × 30 trials = 2160
+  leakage.py                 Single-query MIA + reconstruction
+  workload_leakage.py        Shadow-model MIA across W1–W4 (R4 closure)
+  temporal_validation.py     Tau-sweep + lambda-sweep, 30 trials
+  semantic_validation.py     L1 vs L2 semantic cache (honest negative)
+  predictive_comparison.py   Predictive vs fixed vs naive (new mechanism)
+  aggregate_all_results.py   Combine all CSVs → results/REPORT.md
+
+report/
+  final_report.tex            12-section paper, 8 embedded figures, 18 references
+  response_to_reviewer.md     Comment-by-comment mapping of instructor feedback
+  R2_model_sketch.md          Math derivation + limit checks for the model
+  milestone_report.tex        Original milestone (kept for reference)
+
+tests/  (62 unit tests, all passing)
+  test_parser.py    test_mechanisms.py  test_budget.py    test_template.py
+  test_semantic.py  test_model.py       test_predictive.py
+```
+
+---
+
+## Six Execution Modes
+
+| Mode | Cache | Adaptive ε? | Use case |
+|------|-------|-------------|----------|
+| `EXACT` | none | n/a | Non-private gold standard |
+| `NAIVE_DP` | none | no | PINQ-style textbook baseline |
+| `WORKLOAD_DP` | exact match (L1) | no | Repetitive dashboards, exact reuse |
+| `TEMPORAL_DP` | L1 + staleness/update hooks | no | Streaming data, bounded freshness |
+| `SEMANTIC_DP` | L1 + L2 semantic (Tree Kernel + AST Embedding) | no | Approximate answers OK |
+| `PREDICTIVE_DP` | L1 | **yes** (model-driven) | Unknown workload, want to use full budget |
+
+---
+
+## AI / NLP Components (Section 8 of the Paper)
+
+A semantic L2 cache layer was added on top of the exact-match L1 cache, combining two complementary similarity tools:
+
+- **Tree Kernel** (Collins & Duffy 2001): counts shared subtrees between two SQL ASTs. Deterministic, no training required, captures structural equivalence.
+- **AST Embedding** via `sentence-transformers` (`all-MiniLM-L6-v2`): produces a 384-dim dense representation of the canonicalized AST. Captures higher-level semantic similarity, in the spirit of CodeBERT and GraphCodeBERT.
+
+A query is accepted as a semantic cache match only if both scores cross conservative thresholds ($K_{\mathrm{norm}} \geq 0.95$ and cosine $\geq 0.98$).
+
+**Honest finding (reported in the paper):** semantic matching is dangerous as a free DP cache. Two queries can be structurally near-identical (same template, different literals) and still have very different true answers. The semantic L2 cache reused 80% of budget but returned wrong values by thousands of count units. Future work: pair similarity with a symbolic equivalence prover before admitting a match.
+
+---
+
+## Reproducibility: Figure-to-Script Mapping
 
 | Paper artifact | Script | Output |
 |----------------|--------|--------|
 | Table 1 (Limit A/B verification) | `python3 -m dpdb.model` | console |
-| Table 2 (Main grid validation, alpha x k) | `experiments/model_validation.py` | `results/model_validation/*.csv,*.pdf` |
-| Extended alpha sweep table (alpha up to 10) | `experiments/extended_sweeps.py` | `results/extended/extended_alpha.{csv,pdf,png}` |
+| Table 2 (main grid validation) | `experiments/model_validation.py` | `results/model_validation/*.csv,*.pdf` |
+| Extended alpha sweep table | `experiments/extended_sweeps.py` | `results/extended/extended_alpha.{csv,pdf,png}` |
 | Epsilon sweep table | `experiments/extended_sweeps.py` | `results/extended/epsilon_sweep.csv` |
 | Large-k saturation figure | `experiments/extended_sweeps.py` | `results/extended/extended_large_k.{pdf,png}` |
-| Cross-scale (SF=1 vs SF=10) table | `experiments/sf10_validation.py` | `results/sf10/sf10_validation.{csv,pdf,png}` |
-| Full benchmark grid (Table 3) | `experiments/full_campaign.py` | `results/full_campaign/full_campaign_SF1.csv` + 4 figs |
-| Temporal regime (Fig: tau sweep) | `experiments/temporal_validation.py` | `results/temporal/temporal_validation.{csv,pdf,png}` |
-| MIA single-query AUC (theoretical bound) | `experiments/leakage.py` | `results/leakage/mia_*.{csv,pdf,png}` |
-| Reconstruction error vs eps | `experiments/leakage.py` | `results/leakage/reconstruction_*.{csv,pdf,png}` |
-| Shadow-model MIA across W1-W4 | `experiments/workload_leakage.py` | `results/workload_leakage/workload_mia_*.{csv,pdf,png}` |
-| Semantic L2 cache table (Section 7) | `experiments/semantic_validation.py` | `results/semantic/semantic_validation.{csv,pdf,png}` |
-| Algorithm 1 pseudocode | `src/dpdb/middleware.py` + `src/dpdb/budget.py` | source code |
-| Propositions 1-6 | `src/dpdb/model.py` | source + `tests/test_model.py` |
+| Cross-scale (SF=1 vs SF=10) | `experiments/sf10_validation.py` | `results/sf10/sf10_validation.{csv,pdf,png}` |
+| Full benchmark grid | `experiments/full_campaign.py` | `results/full_campaign/full_campaign_SF1.csv` + 4 figs |
+| Temporal regime | `experiments/temporal_validation.py` | `results/temporal/temporal_validation.{csv,pdf,png}` |
+| Single-query MIA AUC | `experiments/leakage.py` | `results/leakage/mia_*.{csv,pdf,png}` |
+| Reconstruction error | `experiments/leakage.py` | `results/leakage/reconstruction_*.{csv,pdf,png}` |
+| Shadow-model MIA across W1–W4 | `experiments/workload_leakage.py` | `results/workload_leakage/*.{csv,pdf,png}` |
+| Semantic L2 cache table | `experiments/semantic_validation.py` | `results/semantic/semantic_validation.{csv,pdf,png}` |
+| Predictive allocator table | `experiments/predictive_comparison.py` | `results/predictive/predictive_comparison.{csv,pdf,png}` |
+| Algorithm 1 (middleware pipeline) | `src/dpdb/middleware.py` + `src/dpdb/budget.py` | source code |
+| Propositions 1–6 | `src/dpdb/model.py` | source + `tests/test_model.py` |
 | Aggregate report (all numbers) | `experiments/aggregate_all_results.py` | `results/REPORT.md` + `results/ALL_RESULTS.csv` |
+
+---
 
 ## Quick Start
 
@@ -129,154 +162,86 @@ Every figure and table in `report/final_report.tex` is reproducible from a singl
 # 1. Install
 pip install -e ".[dev]"
 
-# 2. Generate data (SF=1 ~30s, SF=10 ~75s with 60M rows)
+# 2. Generate data
 python3 scripts/load_data.py --sf 1.0
-python3 scripts/load_sf10.py   # optional, for cross-scale validation
+python3 scripts/load_sf10.py            # optional, 75 sec, ~2.5 GB
 
-# 3. Run the analytical model self-check (verifies limits)
+# 3. Verify the model self-check
 python3 -m dpdb.model
 
-# 4. Run experiments
-python3 experiments/model_validation.py --trials 30        # main alpha sweep
-python3 experiments/extended_sweeps.py --trials 30         # alpha-up-to-10, eps sweep, large k
-python3 experiments/sf10_validation.py --trials 30         # SF=1 vs SF=10
-python3 experiments/full_campaign.py --trials 30 --k 100   # 6 workloads x 4 eps x 3 modes
-python3 experiments/leakage.py                              # MIA + reconstruction
-python3 experiments/temporal_validation.py --trials 30     # tau + lambda sweep
-python3 experiments/semantic_validation.py --trials 30     # tree kernel + AST embedding
+# 4. Run experiments (each takes 1–10 minutes; safe to skip individual ones)
+python3 experiments/model_validation.py     --trials 30
+python3 experiments/extended_sweeps.py      --trials 30
+python3 experiments/sf10_validation.py      --trials 30
+python3 experiments/full_campaign.py        --trials 30 --k 100 --total-eps 100
+python3 experiments/leakage.py
+python3 experiments/workload_leakage.py     --shadow 30
+python3 experiments/temporal_validation.py  --trials 30
+python3 experiments/semantic_validation.py  --trials 30
+python3 experiments/predictive_comparison.py --trials 30
 
-# 5. Aggregate all results
+# 5. Aggregate everything into one report
 python3 experiments/aggregate_all_results.py
-# -> results/REPORT.md  + results/ALL_RESULTS.csv
+# → results/REPORT.md, results/ALL_RESULTS.csv (5613 rows)
 
-# 6. Run the live demo
+# 6. Interactive demo (for showing the system live)
 python3 scripts/presentation_demo.py
 
 # 7. Run unit tests
 python3 -m pytest tests/ -v
+# 62 passed
 ```
 
 ---
 
-## Datasets
+## Brief Compliance (Instructor's Revision Plan)
 
-- **TPC-H SF=1** — generated via DuckDB's official `tpch` extension. 8 tables, 6,001,215 lineitem rows.
-- **UCI Adult** — downloaded from `archive.ics.uci.edu`. 48,842 rows, 15 attributes. The de-facto standard benchmark in the DP literature.
+Each item from the instructor's revision brief is addressed and traceable.
 
-Both reside in a single `data/dpdb.duckdb` file. Backend can be switched to PostgreSQL by changing `config.yaml`.
-
----
-
-## Execution Modes
-
-| Mode | Cache | When to use |
-|------|-------|-------------|
-| `EXACT` | none | Non-private baseline (gold standard) |
-| `NAIVE_DP` | none | PINQ-style sequential composition baseline |
-| `WORKLOAD_DP` | L1 exact-match | Workload-aware accounting (Sections 4-6) |
-| `TEMPORAL_DP` | L1 + staleness | With τ and λ from the temporal extension (Section 5) |
-| `SEMANTIC_DP` | L1 + L2 semantic | Tree kernel + embedding (Section 6, honest negative result) |
-
----
-
-## Key Empirical Results
-
-### 1. Model accuracy on Zipf workloads (m=7, 30 trials per cell)
-
-| α \\ k | 10 | 25 | 50 | 100 |
-|--------|-----|-----|-----|-----|
-| 0.0 | 5.50 / 5.53 | 6.85 / 6.77 | 7.00 / 7.00 | 7.00 / 7.00 |
-| 1.0 | 4.73 / 4.70 | 6.32 / 6.30 | 6.88 / 6.90 | 7.00 / 7.00 |
-| 3.0 | 2.19 / 2.07 | 3.07 / 3.33 | 3.85 / 3.90 | 4.72 / 4.67 |
-
-Format: `predicted / empirical`. Worst absolute error 0.26; worst relative error 8.6% (high-skew, low-k cell).
-
-### 2. Membership inference attack vs ε
-
-| ε | MIA AUC (empirical) | Theory `e^ε/(1+e^ε)` |
-|---|---------------------|----------------------|
-| 0.01 | 0.499 | 0.503 |
-| 0.10 | 0.522 | 0.525 |
-| 1.00 | 0.724 | 0.731 |
-| 5.00 | 0.988 | 0.993 |
-
-### 3. Temporal regime
-
-| τ | Empirical ε | Model prediction |
-|---|-------------|------------------|
-| 10 | 38.3 | 69.9 |
-| 25 | 22.5 | 27.9 |
-| 50 | 13.7 | 14.0 |
-| 100 | 7.0 | 7.0 |
-| ∞ | 7.0 | 7.0 |
-
-Model is a slight upper bound; both follow the same trend.
+| Item | Brief request | Where in code/paper |
+|------|---------------|---------------------|
+| R1 | Reframe contribution from mechanism to model | Abstract, §1, R2_model_sketch.md |
+| R2 | Statistical model of budget vs DP (load-bearing) | §4, src/dpdb/model.py, tests/test_model.py |
+| R3 | Couple budget with temporality | §5, src/dpdb/budget.py temporal hooks |
+| R4 | Leakage analysis with MIA + reconstruction | §7, experiments/leakage.py + workload_leakage.py |
+| R5 | Address inline comments (AVG, 1-1/k, Algorithm 1, RQ) | §3 (AVG paragraph), §4 (Limit A for 1-1/k), §6 (new Algorithm 1) |
+| R6 | Benchmark grid (W1–W4, SF=1/SF=10, ε sweep, 30 trials) | §6 + experiments/full_campaign.py (4530 trials total) |
+| Deliverable 1 | Revised paper | report/final_report.tex |
+| Deliverable 2 | Reproducibility artifact + figure-to-script map | this README's table above |
+| Deliverable 3 | Response-to-reviewer | report/response_to_reviewer.md |
+| Bonus | Predictive allocator (Section 9) | src/dpdb/predictive.py + experiments/predictive_comparison.py |
+| Bonus | Six items in Section 10 Future Work | report/final_report.tex §10 |
 
 ---
 
-## Project Layout
+## Paper Section Map
+
+The paper (`report/final_report.tex`) follows a clean 12-section narrative:
 
 ```
-diffpriv-db/
-├── src/dpdb/
-│   ├── model.py           ★ ANALYTICAL MODEL (R2)
-│   ├── workload_gen.py    Zipf-parameterized workloads
-│   ├── budget.py          Budget ledger + temporal (R3)
-│   ├── semantic.py        Tree kernel + AST embedding
-│   ├── parser.py / analyzer.py / mechanisms.py
-│   ├── middleware.py / db.py / config.py
-│   └── demo.py            Step-by-step trace UI
-├── experiments/
-│   ├── model_validation.py     ★ R6 main validation
-│   ├── leakage.py              ★ R4 MIA + reconstruction
-│   ├── temporal_validation.py  ★ R3 empirical
-│   ├── semantic_validation.py  Honest semantic L2 result
-│   └── benchmark.py             Original W1-W4 benchmark
-├── results/
-│   ├── model_validation/  ★ Figures + CSV from R6
-│   ├── leakage/           ★ MIA + reconstruction figures
-│   ├── temporal/          ★ Temporal validation
-│   └── semantic/          ★ Semantic L2 results
-├── report/
-│   ├── final_report.tex          ★ THE REVISED PAPER
-│   ├── response_to_reviewer.md   ★ Map of how each comment is addressed
-│   ├── R2_model_sketch.md         ★ Pre-paper derivation
-│   └── milestone_report.tex       Original milestone (for comparison)
-├── tests/                57 unit tests across 6 modules
-├── scripts/              Data loaders, demos
-├── config.yaml
-├── pyproject.toml
-└── README.md
+§1  Introduction              ─ why the milestone framing was thin, what the new contribution is
+§2  Background & Related     ─ DP foundations + private SQL systems + tree kernels + code embeddings
+§3  Threat Model              ─ adversary, neighbouring DBs, supported SQL, sensitivities (AVG justified)
+§4  Analytical Model          ─ five propositions + limit verification (R2)
+§5  Temporal Extension        ─ Proposition 6, three regimes (R3)
+§6  System Implementation     ─ middleware architecture + new Algorithm 1 (R5)
+§7  Empirical Validation      ─ 4530-trial campaign + cross-scale (R6)
+§8  Semantic Cache             ─ Tree Kernel + AST Embedding + honest negative
+§9  Predictive Allocator      ─ model-driven adaptive ε mechanism (new contribution)
+§10 Future Work                ─ six concrete next steps
+§11 Discussion                 ─ where the model wins, where it loses
+§12 Conclusion
 ```
 
 ---
 
 ## Status
 
-| Phase | Status |
-|-------|--------|
-| R1: Reframe contribution | ✓ Done |
-| R2: Analytical model + 5 propositions | ✓ Done, validated <3% |
-| R3: Temporal extension + Proposition 6 | ✓ Done, validated |
-| R4: Leakage experiments (MIA + reconstruction) | ✓ Done, matches theory |
-| R5: Address inline comments | ✓ Done |
-| R6: Benchmark campaign with model validation | ✓ Done |
-| Semantic L2 cache (AI angle) | ✓ Done (with honest tradeoff) |
-| Response-to-reviewer document | ✓ Done |
-| 57 unit tests passing | ✓ |
-| Final paper compiled | Pending Overleaf upload |
+- **62 unit tests passing**
+- **4,530 experimental trials** complete
+- **24 figures** generated and tracked in `results/`
+- **Paper** ready to compile on Overleaf (LaTeX source + embedded figure paths)
+- **GitHub:** [canoztas/cmp653-project](https://github.com/canoztas/cmp653-project) (private)
 
----
-
-## License
-
-Course project for educational use. If you build on this, please cite:
-
-```bibtex
-@misc{oztas2026dpsql,
-  author = {Öztaş, Refik Can},
-  title = {A Statistical Model of Privacy-Budget Consumption in Repeated Aggregate SQL Workloads},
-  year = {2026},
-  note = {CMP653 Project Report, Hacettepe University}
-}
-```
+For one-page Turkish summary, see [ProjeOzeti.md](ProjeOzeti.md).
+For demo commands during presentation, see [DEMO.md](DEMO.md).

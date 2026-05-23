@@ -83,6 +83,30 @@ Specifically, we contribute:
 
 The original milestone research question (``does caching help?'') is recovered as the special case $\alpha \to \infty$ of the model (Proposition~\ref{prop:savings}, Limit~A), where the savings ratio reduces to $1-1/k$.
 
+\begin{table*}[t]
+\caption{Contributions at a glance.}
+\label{tab:contrib}
+\centering
+\small
+\begin{tabular}{l|p{6.5cm}|p{6.5cm}}
+\toprule
+\textbf{Contribution} & \textbf{What it is} & \textbf{Where it lives} \\
+\midrule
+Analytical model (R2) & Closed-form $\E[u_k]$, $\E[\eps_{\mathrm{wa}}]$, savings ratio $S(k)$, McDiarmid tail bound, fixed-budget utility prediction. Five propositions; two limits verified analytically and empirically. & \texttt{src/dpdb/model.py}; paper §\ref{sec:model}; tests \texttt{test\_model.py}; derivation \texttt{report/R2\_model\_sketch.md} \\
+\midrule
+Temporal extension (R3) & Couples budget with staleness tolerance $\tau$ and Poisson update rate $\lambda$. Three regimes: static, bounded-staleness, update-driven. & \texttt{src/dpdb/budget.py} (temporal hooks); paper §\ref{sec:temporal} \\
+\midrule
+\textbf{Predictive budget allocator} & First DP-SQL mechanism that adapts $\eps_q$ at runtime from a learned workload model. Targets the offline optimum $\eps_q^* = B/u_k$. & \texttt{src/dpdb/predictive.py}; paper §\ref{sec:predictive}; tests \texttt{test\_predictive.py} \\
+\midrule
+Semantic cache (AI/AST) & Tree kernel + sentence-transformer embedding over SQL ASTs. Honest negative result: dangerous for DP unless paired with formal equivalence. & \texttt{src/dpdb/semantic.py}; paper §\ref{sec:semantic}; tests \texttt{test\_semantic.py} \\
+\midrule
+Leakage analysis (R4) & Single-query MIA, drill-down reconstruction, and shadow-model MIA across W1--W4. Cross-checked against the model's cumulative-$\eps$ bound. & \texttt{experiments/\{leakage,workload\_leakage\}.py}; paper §\ref{sec:leakage} \\
+\midrule
+Empirical campaign (R6) & 4{,}530 trials across six sweeps: main grid, extended-$\alpha$, $\eps$ sweep, large $k$, SF=1 vs SF=10, full benchmark. & \texttt{experiments/} (8 scripts); paper §\ref{sec:eval} \\
+\bottomrule
+\end{tabular}
+\end{table*}
+
 %% ============================================================
 \section{Background and Related Work}
 \label{sec:related}
