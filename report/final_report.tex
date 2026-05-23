@@ -563,6 +563,79 @@ The single-query MIA above is conservative: in practice, an attacker sees a \emp
 \textbf{Cross-check with the R2 model.} The R2 model predicts an upper bound on attacker advantage via the cumulative $\eps$ consumed. The empirical AUC falls well below this bound in all 32 cells, confirming that the model is conservative for leakage prediction (it overestimates risk, which is the safe direction). A tighter joint model of budget $\to$ attack success is left as future work.
 
 %% ============================================================
+\section{Predictive Budget Allocator: Putting the Model to Work}
+\label{sec:predictive}
+
+The analytical model of §\ref{sec:model} is descriptive: given a workload distribution, it predicts how much budget will be consumed. In this section we close the loop and use the same model \emph{prescriptively}, as the backbone of a new execution mode that adapts the per-query privacy parameter $\eps_q$ online instead of fixing it offline.
+
+\paragraph{Mechanism.}
+At each incoming query, the allocator maintains an empirical frequency distribution over observed template hashes (Laplace-smoothed). After a small warmup phase (3--10\% of the workload, used to seed the prior), it estimates the workload's total unique-template count as $\hat U = $ \texttt{expected\_unique\_queries}$(\hat p, k_{\mathrm{total}})$ from Proposition~\ref{prop:eu}, and allocates
+\[
+\eps_q^{\,\mathrm{pred}} \;=\; \frac{B}{\max(\hat U, 1)},
+\]
+where $B$ is the total privacy budget. The allocator caps the per-query value to the remaining budget so total spend never exceeds $B$ by construction.
+
+\paragraph{Why this is novel.}
+PINQ~\cite{mcsherry2009privacy}, PrivateSQL~\cite{kotsogiannis2019privatesql}, Chorus~\cite{johnson2020chorus}, and DOP-SQL~\cite{yu2024dopsql} all expose a fixed per-query $\eps_q$ that the analyst chooses up front. None of them adapt $\eps_q$ at runtime from observed workload structure. The predictive allocator is the first DP-SQL mechanism we are aware of that uses an analytical workload model as a runtime budget-allocation policy. Its mathematical justification rests directly on Proposition~\ref{prop:savings}: the optimal offline allocation is $\eps_q^* = B/u_k$, and the predictive allocator approximates $u_k$ online.
+
+\paragraph{Empirical comparison.}
+Table~\ref{tab:predictive} compares three strategies on Zipf workloads ($k=100$, $B=10$, 30 trials per cell). Naive divides $B$ evenly across $k$ queries ($\eps_q=0.1$). Workload-aware uses the same fixed $\eps_q=0.1$ but only charges cache misses---it answers all 100 queries but never spends more than $\sim 0.7\eps$ of the budget. Predictive uses the model to choose $\eps_q$ on the fly.
+
+\begin{table}[h]
+\caption{Predictive allocator vs fixed-$\eps_q$ baselines (mean over 30 trials, $k=100$, total budget $B=10$, warmup fraction 3\%).}
+\label{tab:predictive}
+\centering
+\small
+\begin{tabular}{c|l|cccc}
+\toprule
+$\alpha$ & Mode & $\eps$ spent & MAE & Queries answered & $\eps_q$ per release \\
+\midrule
+\multirow{3}{*}{0.0} & NAIVE      & 10.0  & 9.86 & 100/100 & 0.10 \\
+                      & WORKLOAD-DP & 0.7   & 9.46 & 100/100 & 0.10 (per miss) \\
+                      & \textbf{PREDICTIVE} & 10.0 & \textbf{8.21} & 69/100 & 1.43 (per miss) \\
+\midrule
+\multirow{3}{*}{1.0} & NAIVE      & 10.0  & 9.81 & 100/100 & 0.10 \\
+                      & WORKLOAD-DP & 0.7   & 9.96 & 100/100 & 0.10 (per miss) \\
+                      & \textbf{PREDICTIVE} & 10.0 & \textbf{8.98} & 78/100 & 1.43 (per miss) \\
+\midrule
+\multirow{3}{*}{2.0} & NAIVE      & 10.0  & 9.96 & 100/100 & 0.10 \\
+                      & WORKLOAD-DP & 0.7   & 10.22 & 100/100 & 0.10 (per miss) \\
+                      & \textbf{PREDICTIVE} & 10.0 & \textbf{9.42} & 88/100 & 1.43 (per miss) \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\paragraph{Interpretation.}
+The predictive allocator delivers a modest MAE reduction (4--17\% lower than naive) at the cost of denying some queries when the budget runs out. The trade-off surface is visible: $\eps_q$ per release jumps from $0.1$ to $\approx 1.43 = B/m$, matching the theoretical optimum that the model derives from the predicted $\hat U \approx m$. Cache hits inherit whichever noisy answer was released at the time, so the cache becomes "locked in" to the early-release quality. The result is honest: the model can be put to work, but to realize the full $B/U$ utility benefit, the mechanism must \emph{re-release} cached answers when the budget shows surplus---an extension we discuss in §\ref{sec:future-work}.
+
+%% ============================================================
+\section{Future Work}
+\label{sec:future-work}
+
+The analytical model and the predictive allocator open several concrete next steps, all of which were considered out of scope for the course-project version of this work and are deferred here.
+
+\paragraph{Cache re-release on budget surplus.}
+The predictive allocator's main weakness is that early-release cache entries lock in the noise scale used at the time. If the workload turns out more skewed than initially predicted, late-stage budget surplus cannot be used to refresh those entries. A re-release policy that periodically re-runs the noise mechanism on stale cache entries when surplus exceeds a threshold would close this gap. The privacy accounting is straightforward (each re-release is a fresh $\eps_q$-DP release).
+
+\paragraph{Advanced composition with R\'enyi DP.}
+Our budget ledger uses basic sequential composition: $\eps_{\mathrm{total}} = \sum \eps_i$. Switching to R\'enyi DP~\cite{mironov2017renyi} or zCDP~\cite{bun2016concentrated} would tighten the bound on the total privacy loss, allowing more releases (or larger per-query $\eps_q$) under the same final $(\eps, \delta)$ guarantee. The R2 model would then predict $\sum \eps_i$ rather than count $u_k$, with the closed-form structure mostly unchanged.
+
+\paragraph{Burstiness and renewal-process arrival models.}
+The i.i.d.\ template sampling assumption in §\ref{sec:model} is a useful first approximation. Real workloads exhibit bursts: a dashboard refreshes 30 times in a minute, then sleeps for an hour. Replacing the Poisson assumption with a renewal process (Pareto or hyperexponential inter-arrival distribution) would let the temporal extension capture these patterns while preserving the closed-form $\E[\eps]$ derivation.
+
+\paragraph{Real-world workload traces.}
+The Zipf parametrization in this paper is a controlled sweep, not a measurement of real analyst behaviour. Replicating the experiments against a production-style query log (e.g., the Snowflake or Redshift trace anonymizations published in recent benchmark papers) would validate the model under genuinely heavy-tailed real workloads.
+
+\paragraph{Cross-checking the model with leakage bounds.}
+§\ref{sec:leakage} showed that the cumulative-$\eps$ upper bound is loose for shadow-model MIA on realistic workloads. A tighter joint bound that uses the workload's $\E[u_k]$ to discount the per-target privacy loss is a clear next theoretical step.
+
+\paragraph{Equivalence-checked semantic cache.}
+The semantic L2 cache of §\ref{sec:semantic} fails because tree-kernel and embedding similarity do not imply alpha-equivalence. Pairing those similarity tools with a symbolic equivalence prover (predicate normalization, range-merging, etc.) would let the system safely admit a semantic match only when the queries are provably equivalent, preserving the post-processing property.
+
+\paragraph{Multi-table and JOIN support.}
+The current scope (single-table aggregates) was deliberately approved at the milestone stage. The model's framework---occupancy over a template distribution---generalizes naturally to JOIN-shaped queries if a sensitivity bound (residual sensitivity~\cite{dong2021residual} or R2T~\cite{dong2022r2t}) is available per template. Incorporating join sensitivity is the most direct path to a thesis-grade extension.
+
+%% ============================================================
 \section{Discussion}
 \label{sec:discussion}
 

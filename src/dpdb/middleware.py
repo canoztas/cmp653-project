@@ -20,7 +20,8 @@ class ExecutionMode(str, Enum):
     NAIVE_DP = "naive_dp"
     WORKLOAD_DP = "workload_dp"
     SEMANTIC_DP = "semantic_dp"
-    TEMPORAL_DP = "temporal_dp"  # workload-aware + staleness/update model
+    TEMPORAL_DP = "temporal_dp"     # workload-aware + staleness/update model
+    PREDICTIVE_DP = "predictive_dp" # workload-aware + model-driven adaptive epsilon
 
 
 @dataclass
@@ -45,10 +46,13 @@ class DPMiddleware:
         staleness_tolerance: float = float("inf"),
         update_rate: float = 0.0,
         update_invalidation_prob: float = 0.0,
+        predictive_k_total: int = 100,
+        predictive_warmup_fraction: float = 0.1,
     ):
         self.config = config
         self.mode = mode
         self.db = db or create_database(config)
+        self.predictor = None
 
         if mode == ExecutionMode.NAIVE_DP:
             self.budget = BudgetLedger(
@@ -65,6 +69,17 @@ class DPMiddleware:
                 staleness_tolerance=staleness_tolerance,
                 update_rate=update_rate,
                 update_invalidation_prob=update_invalidation_prob,
+            )
+        elif mode == ExecutionMode.PREDICTIVE_DP:
+            from dpdb.predictive import PredictiveAllocator, PredictiveConfig
+            self.predictor = PredictiveAllocator(PredictiveConfig(
+                total_budget=config.privacy.total_epsilon,
+                k_total=predictive_k_total,
+                warmup_fraction=predictive_warmup_fraction,
+            ))
+            self.budget = BudgetLedger(
+                config.privacy.total_epsilon,
+                AllocationStrategy.WORKLOAD_AWARE,
             )
         elif mode == ExecutionMode.SEMANTIC_DP:
             from dpdb.semantic import SemanticMatcher
@@ -97,9 +112,14 @@ class DPMiddleware:
                 error=str(e),
             )
 
-        eps = epsilon or self.config.privacy.default_query_epsilon
+        # Predictive mode overrides the per-query epsilon
+        if self.mode == ExecutionMode.PREDICTIVE_DP and self.predictor is not None:
+            eps = self.predictor.next_epsilon(parsed)
+        else:
+            eps = epsilon or self.config.privacy.default_query_epsilon
 
-        # Check cache first (workload-aware only)
+        # Cache hits short-circuit before budget allocation: they cost ε=0
+        # and must succeed even when the predictor says the budget is dry.
         if self.budget:
             cached = self.budget.try_cache(parsed)
             if cached is not None:
@@ -110,6 +130,14 @@ class DPMiddleware:
                     cache_hit=True,
                     latency_ms=_elapsed(start),
                 )
+
+        # Cache miss — now we need a positive budget to release a fresh noisy answer.
+        if self.mode == ExecutionMode.PREDICTIVE_DP and eps <= 0:
+            return QueryResult(
+                columns=[], rows=[], epsilon_used=0.0,
+                cache_hit=False, latency_ms=_elapsed(start),
+                error="Predictive allocator returned zero budget",
+            )
 
         # Analyze sensitivity
         try:
@@ -140,6 +168,9 @@ class DPMiddleware:
         # Cache result
         if self.budget:
             self.budget.store_result(parsed, columns, noisy_rows, allocated_eps)
+        # Predictive bookkeeping
+        if self.predictor is not None:
+            self.predictor.note_release(parsed, allocated_eps)
 
         return QueryResult(
             columns=columns,
