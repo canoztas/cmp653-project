@@ -101,6 +101,28 @@ A ~1.4 KLOC Python prototype with 57 passing unit tests:
 
 ---
 
+## Reproducibility: figure-to-script mapping
+
+Every figure and table in `report/final_report.tex` is reproducible from a single script in `experiments/`. The brief asked for this mapping explicitly.
+
+| Paper artifact | Script | Output |
+|----------------|--------|--------|
+| Table 1 (Limit A/B verification) | `python3 -m dpdb.model` | console |
+| Table 2 (Main grid validation, alpha x k) | `experiments/model_validation.py` | `results/model_validation/*.csv,*.pdf` |
+| Extended alpha sweep table (alpha up to 10) | `experiments/extended_sweeps.py` | `results/extended/extended_alpha.{csv,pdf,png}` |
+| Epsilon sweep table | `experiments/extended_sweeps.py` | `results/extended/epsilon_sweep.csv` |
+| Large-k saturation figure | `experiments/extended_sweeps.py` | `results/extended/extended_large_k.{pdf,png}` |
+| Cross-scale (SF=1 vs SF=10) table | `experiments/sf10_validation.py` | `results/sf10/sf10_validation.{csv,pdf,png}` |
+| Full benchmark grid (Table 3) | `experiments/full_campaign.py` | `results/full_campaign/full_campaign_SF1.csv` + 4 figs |
+| Temporal regime (Fig: tau sweep) | `experiments/temporal_validation.py` | `results/temporal/temporal_validation.{csv,pdf,png}` |
+| MIA single-query AUC (theoretical bound) | `experiments/leakage.py` | `results/leakage/mia_*.{csv,pdf,png}` |
+| Reconstruction error vs eps | `experiments/leakage.py` | `results/leakage/reconstruction_*.{csv,pdf,png}` |
+| Shadow-model MIA across W1-W4 | `experiments/workload_leakage.py` | `results/workload_leakage/workload_mia_*.{csv,pdf,png}` |
+| Semantic L2 cache table (Section 7) | `experiments/semantic_validation.py` | `results/semantic/semantic_validation.{csv,pdf,png}` |
+| Algorithm 1 pseudocode | `src/dpdb/middleware.py` + `src/dpdb/budget.py` | source code |
+| Propositions 1-6 | `src/dpdb/model.py` | source + `tests/test_model.py` |
+| Aggregate report (all numbers) | `experiments/aggregate_all_results.py` | `results/REPORT.md` + `results/ALL_RESULTS.csv` |
+
 ## Quick Start
 
 ```powershell

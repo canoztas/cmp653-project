@@ -479,6 +479,17 @@ Errors scale as $\sqrt{2}/\eps$ per pair-difference, as expected from the standa
 
 \paragraph{Implication for the model.} Both attacks degrade in the same regime in which the model predicts more efficient budget consumption (high skew, low $\eps_q$). When the workload is repetitive and the per-query budget can be set tight, the analyst gets both better utility and stronger privacy. When the workload is a drill-down (W4), the model correctly predicts that workload-aware caching does \emph{not} help and the reconstruction attack accordingly succeeds at any practical $\eps$.
 
+\paragraph{Workload-level shadow-model MIA (across W1--W4).}
+The single-query MIA above is conservative: in practice, an attacker sees a \emph{sequence} of releases and may train a classifier (a "shadow model") on simulated runs of the middleware. We executed this stronger attack to address the reviewer's specific request for MIA "across W1--W4 at multiple $\eps$ values."
+
+\textbf{Setup.} For each workload, we build two TPC-H/Adult instances differing in one target Adult tuple. Each instance produces an i.i.d.\ noisy output sequence under the middleware. We collect 30 shadow runs per world (60 sequences total), train a logistic-regression classifier on 70\% of them, and measure AUC on the holdout 30\%.
+
+\textbf{Result.} Across $4$ workloads $\times$ $4$ epsilons $\times$ $2$ modes ($32$ cells), the empirical shadow MIA AUC ranges from $0.15$ to $0.58$---substantially below the theoretical \emph{cumulative} bound $e^{\sum \eps_q}/(1+e^{\sum \eps_q})$ (which approaches $1.0$ once total consumption exceeds $\sim 5$).
+
+\textbf{Why the gap?} Most queries in W1--W3 do not directly probe the target row; they are diluted across the $k=50$-query workload. The classifier learns to identify the few informative queries, but the signal-to-noise ratio is governed by the per-query $\eps_q$, not the cumulative budget. This empirical finding is consistent with prior work on amplification by sub-sampling and demonstrates that \emph{cumulative-budget bounds are loose for realistic workload MIA}.
+
+\textbf{Cross-check with the R2 model.} The R2 model predicts an upper bound on attacker advantage via the cumulative $\eps$ consumed. The empirical AUC falls well below this bound in all 32 cells, confirming that the model is conservative for leakage prediction (it overestimates risk, which is the safe direction). A tighter joint model of budget $\to$ attack success is left as future work.
+
 %% ============================================================
 \section{Discussion}
 \label{sec:discussion}

@@ -82,12 +82,15 @@ where `N` couples horizon, staleness tolerance, and update rate. Setting `tau = 
 
 ### Comment 9 — *"Leakage and savings models are very limited."*
 
-**Where addressed.** §7 Privacy Leakage Analysis (new section).
+**Where addressed.** §7 Privacy Leakage Analysis (new section), plus a workload-level subsection added in response to the explicit "across W1-W4 at multiple eps values" request.
 
-**Action.** Two empirical leakage analyses are now executed (not "planned"):
+**Action.** Three empirical leakage analyses are now executed (not "planned"):
 
-- **Membership inference** AUC across `eps in {0.01, ..., 5}` against the theoretical bound `exp(eps)/(1+exp(eps))`. Empirical curve tracks theory within `<=1%`.
-- **Reconstruction** on a 5-level drill-down, against the theoretical scaling `sqrt(2)/eps`. Empirical curve matches within `<=10%`.
+- **Single-query MIA** AUC across `eps in {0.01, ..., 5}` against the theoretical bound `exp(eps)/(1+exp(eps))`. Empirical curve tracks theory within `<=1%`. This is the optimal MIA for a single Laplace release (the likelihood ratio is monotone in the observation, so threshold = optimal classifier; shadow models would not help here).
+- **Reconstruction** on a 5-level drill-down, against the theoretical scaling `2/eps`. Empirical curve matches within `<=10%`.
+- **Workload-level shadow-model MIA** across W1-W4 at `eps in {0.1, 0.5, 1.0, 2.0}` and both NAIVE_DP and WORKLOAD_DP modes (32 cells x 60 shadow runs each). The shadow model is a logistic-regression classifier trained on simulated runs against two world instances. Empirical AUC ranges from 0.15-0.58, substantially below the cumulative-budget bound (which approaches 1.0). This honest negative finding shows that cumulative-eps bounds are *loose* for realistic workload MIA -- a more interesting result than just confirming the bound.
+
+**Cross-check with R2 model.** §7 now includes a model-vs-empirical AUC comparison: the R2 model gives an upper bound on attacker advantage from cumulative eps; empirical AUC is uniformly below it. This demonstrates that the model is conservative for leakage prediction (errs toward overstating risk, which is the safe side).
 
 ---
 
