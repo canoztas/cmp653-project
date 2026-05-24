@@ -46,9 +46,9 @@ It is answered in §6 with empirical validation showing model–empirical agreem
 
 ### Comment 5 — AVG implemented via noisy SUM / noisy COUNT: *"why?"*
 
-**Where addressed.** §3 Threat Model and Preliminaries, last bullet (Sensitivities), with sub-paragraphs *"Why split?"* and *"Why is doubling the right honest accounting?"*
+**Where addressed.** §3 Threat Model and Preliminaries, AVG bullet; §11 Future Work, "Decomposed AVG" paragraph.
 
-**Action.** Two-paragraph justification covering (i) why the alternative direct-mean mechanism leaks `n` itself, and (ii) why explicit `2*eps_q` accounting beats hiding the SUM/COUNT split inside a stateless library. This turns a flagged design choice into a point in favour of the explicit ledger.
+**Action — and an honest correction.** The milestone paper described AVG as "implemented through bounded noisy SUM and noisy COUNT". The current implementation (`src/dpdb/middleware.py`, line 227) does NOT actually decompose: it applies the Laplace mechanism directly to the AVG value with sensitivity equal to the column upper bound `B_c` (the worst case, group of size one). The decomposed SUM/COUNT version that would amortize noise by the group size `n` is deferred to Future Work and clearly flagged in §11. The §3 discussion now (i) discloses the current conservative mechanism honestly and (ii) justifies why explicit per-group accounting is the right design direction without overstating that it is already implemented. The discrepancy the reviewer would have caught is now visible in the paper itself.
 
 ---
 

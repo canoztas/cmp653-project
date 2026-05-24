@@ -36,7 +36,7 @@ Plus three honest experimental findings (the kind of negative results that make 
 
 ## Headline Numbers
 
-Full benchmark campaign: **4,530 trials, ~150K queries, six experimental sweeps**.
+Full benchmark campaign: **4,155 core trials, ~150K queries, six experimental sweeps**.
 
 ### Budget consumption (k=100, total ε=100, 30 trials/cell)
 
@@ -205,7 +205,7 @@ Each item from the instructor's revision brief is addressed and traceable.
 | R3 | Couple budget with temporality | §5, src/dpdb/budget.py temporal hooks |
 | R4 | Leakage analysis with MIA + reconstruction | §7, experiments/leakage.py + workload_leakage.py |
 | R5 | Address inline comments (AVG, 1-1/k, Algorithm 1, RQ) | §3 (AVG paragraph), §4 (Limit A for 1-1/k), §6 (new Algorithm 1) |
-| R6 | Benchmark grid (W1–W4, SF=1/SF=10, ε sweep, 30 trials) | §6 + experiments/full_campaign.py (4530 trials total) |
+| R6 | Benchmark grid (W1–W4, SF=1/SF=10, ε sweep, 30 trials) | §6 + experiments/full_campaign.py (4155 core trials total) |
 | Deliverable 1 | Revised paper | report/final_report.tex |
 | Deliverable 2 | Reproducibility artifact + figure-to-script map | this README's table above |
 | Deliverable 3 | Response-to-reviewer | report/response_to_reviewer.md |
@@ -225,7 +225,7 @@ The paper (`report/final_report.tex`) follows a clean 12-section narrative:
 §4  Analytical Model          ─ five propositions + limit verification (R2)
 §5  Temporal Extension        ─ Proposition 6, three regimes (R3)
 §6  System Implementation     ─ middleware architecture + new Algorithm 1 (R5)
-§7  Empirical Validation      ─ 4530-trial campaign + cross-scale (R6)
+§7  Empirical Validation      ─ 4155-trial core campaign + cross-scale (R6)
 §8  Semantic Cache             ─ Tree Kernel + AST Embedding + honest negative
 §9  Predictive Allocator      ─ model-driven adaptive ε mechanism (new contribution)
 §10 Future Work                ─ six concrete next steps
@@ -238,7 +238,7 @@ The paper (`report/final_report.tex`) follows a clean 12-section narrative:
 ## Status
 
 - **62 unit tests passing**
-- **4,530 experimental trials** complete
+- **~8,000 experimental trials** across 13 scripts (4,155 in the core six-sweep §7 campaign, ~3,950 in the follow-up §8–§10 experiments). The aggregated long-form CSV at `results/ALL_RESULTS.csv` records 5,613 result rows.
 - **24 figures** generated and tracked in `results/`
 - **Paper** ready to compile on Overleaf (LaTeX source + embedded figure paths)
 - **GitHub:** [canoztas/cmp653-project](https://github.com/canoztas/cmp653-project) (private)

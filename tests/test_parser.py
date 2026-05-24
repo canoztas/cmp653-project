@@ -71,3 +71,24 @@ class TestInvalidQueries:
     def test_no_aggregate_rejected(self):
         with pytest.raises(ParseError, match="aggregate"):
             parse_query("SELECT l_quantity FROM lineitem")
+
+    def test_non_aggregate_select_without_group_by_rejected(self):
+        # Bug reported by Codex review: SELECT col, COUNT(*) without GROUP BY
+        # used to be silently accepted. Should now raise.
+        with pytest.raises(ParseError, match="GROUP BY"):
+            parse_query("SELECT l_returnflag, COUNT(*) FROM lineitem")
+
+    def test_non_aggregate_select_in_group_by_allowed(self):
+        # The same query with proper GROUP BY must still parse.
+        q = parse_query(
+            "SELECT l_returnflag, COUNT(*) FROM lineitem GROUP BY l_returnflag"
+        )
+        assert q.group_by == ["l_returnflag"]
+        assert len(q.aggregates) == 1
+
+    def test_non_aggregate_column_not_in_group_by_rejected(self):
+        # Selecting one column but grouping by a different one is invalid.
+        with pytest.raises(ParseError, match="not in GROUP BY"):
+            parse_query(
+                "SELECT l_returnflag, COUNT(*) FROM lineitem GROUP BY l_shipmode"
+            )

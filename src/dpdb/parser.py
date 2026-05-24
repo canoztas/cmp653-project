@@ -66,26 +66,7 @@ def parse_query(sql: str) -> ParsedQuery:
     if joins:
         raise ParseError("JOINs are not supported in the current version")
 
-    # Extract aggregates from SELECT
-    aggregates = []
-    for select_expr in ast.expressions:
-        agg = _extract_aggregate(select_expr)
-        if agg:
-            aggregates.append(agg)
-        else:
-            # Allow GROUP BY columns in SELECT
-            if isinstance(select_expr, (exp.Column, exp.Alias)):
-                col = select_expr.find(exp.Column)
-                if col is not None:
-                    continue
-            raise ParseError(
-                f"Non-aggregate, non-group-by expression in SELECT: {select_expr.sql()}"
-            )
-
-    if not aggregates:
-        raise ParseError("At least one aggregate function required (COUNT, SUM, AVG)")
-
-    # Extract GROUP BY
+    # Extract GROUP BY first so we can validate SELECT against it
     group_by = []
     group_clause = ast.args.get("group")
     if group_clause:
@@ -94,6 +75,34 @@ def parse_query(sql: str) -> ParsedQuery:
                 group_by.append(g.name)
             else:
                 group_by.append(g.sql())
+    group_by_set = set(group_by)
+
+    # Extract aggregates from SELECT, enforce GROUP BY for non-aggregate columns
+    aggregates = []
+    for select_expr in ast.expressions:
+        agg = _extract_aggregate(select_expr)
+        if agg:
+            aggregates.append(agg)
+            continue
+        # Non-aggregate: must be a column AND must appear in GROUP BY
+        col = None
+        if isinstance(select_expr, exp.Column):
+            col = select_expr
+        elif isinstance(select_expr, exp.Alias):
+            inner = select_expr.this
+            if isinstance(inner, exp.Column):
+                col = inner
+        if col is None:
+            raise ParseError(
+                f"Non-aggregate, non-column expression in SELECT: {select_expr.sql()}"
+            )
+        if col.name not in group_by_set:
+            raise ParseError(
+                f"Non-aggregate column '{col.name}' in SELECT is not in GROUP BY"
+            )
+
+    if not aggregates:
+        raise ParseError("At least one aggregate function required (COUNT, SUM, AVG)")
 
     # Extract WHERE
     where = ast.find(exp.Where)

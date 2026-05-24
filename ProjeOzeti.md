@@ -56,11 +56,11 @@ Workload, m template'li bir dagilim {p_i}'den i.i.d. cekiliyor. 5 proposition tu
 - **Shadow-model MIA across W1-W4** (32 cell × 60 shadow run): AUC 0.15-0.58 (cumulative-ε bound 1.0'dan COK dusuk). Honest finding: cumulative budget bound gerc̆ek attack icin loose
 
 ### R5: Inline Yorumlar Tek Tek
-- AVG: SUM/COUNT bolme tercihi gerekceli (alternatif n'yi sizdırır)
+- **AVG (honest):** Mevcut implementasyon AVG'ye dogrudan Laplace uyguluyor (sensitivity = column bound, worst-case group=1). Decomposed SUM/COUNT yaklasimi §11 Future Work'te. Paper ve kod artik tutarli.
 - `1 − 1/k`: Proposition 2 Limit A olarak konumlandi
-- Algorithm 1: temporal regime + AVG cost ile zenginlestirildi
+- Algorithm 1: temporal regime ile zenginlestirildi
 
-### R6: Benchmark Campaign — 4,530 trial, ~150K query
+### R6: Benchmark Campaign — 4,155 core trial + 3,950 follow-up trial
 
 | Sweep | Trial | Sonuc |
 |-------|-------|-------|
@@ -116,7 +116,9 @@ Brief'in onerdigi "yeni mechanism" — modelin pratik kullanimi:
 
 | | Sayi |
 |---|---|
-| Toplam trial | **4,530** |
+| Core campaign trial (§7) | **4,155** |
+| Follow-up trial (§8-§10) | **~3,950** |
+| Aggregated result row | 5,613 |
 | Toplam query | ~150,000 |
 | Unit test | **62/62 passing** |
 | Figure (PDF + PNG) | 24 |
