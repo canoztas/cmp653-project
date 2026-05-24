@@ -1,0 +1,519 @@
+\documentclass[aspectratio=169,10pt]{beamer}
+
+\usetheme{metropolis}
+\usepackage[utf8]{inputenc}
+\usepackage[turkish,english]{babel}
+\usepackage{graphicx}
+\usepackage{booktabs}
+\usepackage{multirow}
+\usepackage{amsmath, amsfonts, amssymb}
+\usepackage{tikz}
+\usepackage{listings}
+\usepackage{xcolor}
+
+\graphicspath{{../results/}}
+
+% Color palette
+\definecolor{accent}{HTML}{2E86AB}
+\definecolor{warn}{HTML}{E63946}
+\definecolor{ok}{HTML}{06A77D}
+\definecolor{neutral}{HTML}{6C757D}
+
+\setbeamercolor{frametitle}{bg=accent, fg=white}
+\setbeamercolor{progress bar}{fg=accent}
+\setbeamercolor{title separator}{fg=accent}
+\setbeamercolor{block title}{fg=accent}
+
+% Math shortcuts
+\newcommand{\eps}{\varepsilon}
+\newcommand{\E}{\mathbb{E}}
+
+\lstset{
+  basicstyle=\ttfamily\footnotesize,
+  keywordstyle=\color{accent},
+  language=SQL,
+  breaklines=true,
+  frame=single,
+  framesep=4pt
+}
+
+\title{A Statistical Model of Privacy-Budget Consumption \\ in Repeated Aggregate SQL Workloads}
+\subtitle{CMP653 Project Final Presentation}
+\author{Refik Can \"Ozta\c{s}}
+\institute{Hacettepe University \\ \texttt{N25142279}}
+\date{\today}
+
+\begin{document}
+
+% ============================================================
+\maketitle
+
+% ============================================================
+\begin{frame}{The Problem: Aggregate Queries Are Not Safe}
+
+\begin{columns}[T,onlytextwidth]
+\begin{column}{0.55\textwidth}
+\textbf{Intuition (wrong):}
+``Aggregate queries return totals, not individual rows -- they must be safe.''
+
+\vspace{0.3cm}
+\textbf{Reality:} Two overlapping COUNTs isolate one person.
+
+\vspace{0.3cm}
+\begin{lstlisting}
+-- 12 patients with HIV
+SELECT COUNT(*) FROM patients
+WHERE zip='06897' AND disease='HIV';
+
+-- 11 patients with HIV, age <> 43
+SELECT COUNT(*) FROM patients
+WHERE zip='06897' AND disease='HIV'
+  AND age <> 43;
+\end{lstlisting}
+
+\vspace{0.2cm}
+$\Rightarrow$ The 43-year-old in 06897 has HIV.
+\end{column}
+
+\begin{column}{0.45\textwidth}
+\centering
+\begin{tikzpicture}[scale=0.7]
+  \node[fill=accent!20, rounded corners, draw=accent, thick, minimum width=4cm, minimum height=0.8cm] (db) at (0,3) {Database $D$};
+  \node[fill=warn!20, rounded corners, draw=warn, thick, minimum width=4cm, minimum height=0.8cm] (q1) at (0,1.7) {$Q_1$: COUNT(HIV) = 12};
+  \node[fill=warn!20, rounded corners, draw=warn, thick, minimum width=4cm, minimum height=0.8cm] (q2) at (0,0.7) {$Q_2$: COUNT(HIV, no Ali) = 11};
+  \node[fill=warn, text=white, rounded corners, minimum width=4cm, minimum height=0.8cm] (leak) at (0,-0.6) {\textbf{Ali has HIV}};
+  \draw[->, thick] (db) -- (q1);
+  \draw[->, thick] (db) -- (q2);
+  \draw[->, ultra thick, warn] (q1) -- (leak);
+  \draw[->, ultra thick, warn] (q2) -- (leak);
+\end{tikzpicture}
+
+\vspace{0.3cm}
+\small Dinur \& Nissim (2003) proved this generalizes: \\
+\emph{O(n) noisy aggregates reconstruct the whole DB.}
+\end{column}
+\end{columns}
+
+\end{frame}
+
+% ============================================================
+\begin{frame}{Differential Privacy in 30 Seconds}
+
+\begin{block}{Definition (\eps-DP)}
+A randomized mechanism $\mathcal{M}$ is \eps-DP if for any two neighbouring databases $D \sim D'$ (differ by one row) and any output $S$:
+\[
+\Pr[\mathcal{M}(D) \in S] \leq e^{\eps} \cdot \Pr[\mathcal{M}(D') \in S]
+\]
+\end{block}
+
+\vspace{0.3cm}
+\textbf{In practice (Laplace mechanism):}
+\[
+\tilde f(D) = f(D) + \eta, \quad \eta \sim \text{Lap}(\Delta f / \eps)
+\]
+
+\vspace{0.2cm}
+\textbf{Budget composition:} \eps\ accumulates over queries.
+
+\vspace{0.5cm}
+\begin{alertblock}{The Engineering Question}
+A finite budget $\eps_{\text{total}}$ is consumed as the workload runs. \\
+\textbf{How does it degrade?} Predicting this \emph{before} deployment is what this project answers.
+\end{alertblock}
+
+\end{frame}
+
+% ============================================================
+\begin{frame}{Where We Started: Milestone Version}
+
+\textbf{What I built first:}
+
+\begin{itemize}
+  \item Python middleware: SQL parser, sensitivity analyzer, Laplace mechanism
+  \item Budget ledger with \textbf{exact-repeat caching}: identical query $\Rightarrow$ reuse cached noisy answer ($\eps=0$)
+  \item TPC-H benchmark, 4 workload families, 28 unit tests
+  \item Headline number: \textbf{100$\times$ budget savings} on a repetitive workload
+\end{itemize}
+
+\vspace{0.5cm}
+\begin{block}{Milestone claim}
+``Workload-aware caching saves budget by exploiting DP's post-processing property.''
+\end{block}
+
+\end{frame}
+
+% ============================================================
+\begin{frame}{Instructor's Verdict: Not Enough}
+
+\begin{columns}[T,onlytextwidth]
+\begin{column}{0.55\textwidth}
+\textbf{Annotated PDF returned with:}
+
+\begin{itemize}
+  \item \textcolor{warn}{``What is the use of caching in DP?''}
+  \item \textcolor{warn}{``Algorithm 1 trivial!''}
+  \item \textcolor{warn}{``$1 - 1/k$ ?''}
+  \item \textcolor{warn}{``AVG -- why?''}
+  \item \textcolor{warn}{``Caching is already working like that.''}
+\end{itemize}
+
+\vspace{0.3cm}
+\textbf{Summary review (the big one):}
+\begin{quote}
+\small ``Assumptions on exact-repeat reuse are very strong. Budget and temporality should be considered together. Leakage and savings models are very limited. \textbf{Propose a statistical model.}''
+\end{quote}
+\end{column}
+
+\begin{column}{0.45\textwidth}
+\centering
+\textbf{The diagnosis}
+
+\vspace{0.3cm}
+The milestone framed \textbf{caching as the contribution}.
+
+\vspace{0.3cm}
+But caching is a \emph{direct consequence} of DP's post-processing property. Not novel.
+
+\vspace{0.4cm}
+\begin{alertblock}{What to do}
+Move from \\
+\textbf{mechanism} ($\rightarrow$ trivial) \\
+to \\
+\textbf{model} ($\rightarrow$ contribution)
+\end{alertblock}
+\end{column}
+\end{columns}
+
+\end{frame}
+
+% ============================================================
+\begin{frame}{The Pivot: From Mechanism to Model}
+
+\textbf{Old central claim:} ``caching saves budget'' \hspace{0.3cm} (Trivial, instructor flagged it.)
+
+\vspace{0.4cm}
+\textbf{New central claim:}
+\begin{block}{Research question (reframed)}
+Given a workload distribution and a privacy budget, can a \textbf{closed-form statistical model} predict the realized budget consumption and per-query utility \emph{before any query is issued}?
+\end{block}
+
+\vspace{0.4cm}
+Caching is now \emph{the corner case} of the model, not the contribution.
+
+\vspace{0.5cm}
+\centering
+\textbf{Six new contributions:}
+\begin{enumerate}
+\item Analytical model (\textbf{R2})  \hfill 4. Predictive allocator (\textbf{new mechanism})
+\item Temporal extension (\textbf{R3})  \hfill 5. Leakage analysis (\textbf{R4})
+\item Middleware $+$ 62 unit tests  \hfill 6. 4{,}155-trial experimental campaign (\textbf{R6})
+\end{enumerate}
+
+\end{frame}
+
+% ============================================================
+\begin{frame}{The Model in One Slide}
+
+\textbf{Setup:} workload of $k$ queries drawn i.i.d.\ from a template distribution $\{p_i\}_{i=1}^m$.
+
+\vspace{0.3cm}
+\begin{block}{Proposition 1 -- Expected unique queries}
+\[
+\E[u_k] = \sum_{i=1}^m \bigl[1 - (1-p_i)^k\bigr]
+\]
+Coupon-collector / occupancy on a non-uniform distribution.
+\end{block}
+
+\begin{block}{Proposition 2 -- Workload-aware budget}
+\[
+\E[\eps_{\text{wa}}] = \eps_q \cdot \E[u_k] \qquad
+S(k) = 1 - \tfrac{1}{k}\sum_i \bigl[1 - (1-p_i)^k\bigr]
+\]
+\end{block}
+
+\textbf{Two limits:}
+\begin{itemize}
+  \item $\alpha \to \infty$ (perfect repetition, $p_1 = 1$): $\;S(k) = 1 - 1/k$ \hfill \textcolor{ok}{(the milestone's toy formula)}
+  \item $\alpha \to 0$ (uniform, $m \to \infty$): $\;S(k) \to 0$ \hfill \textcolor{ok}{(naive composition recovered)}
+\end{itemize}
+
+\end{frame}
+
+% ============================================================
+\begin{frame}{Empirical Validation: The Two Limits}
+
+\centering
+\includegraphics[width=0.72\textwidth]{model_validation/model_validation_limits.png}
+
+\vspace{0.3cm}
+\small
+Dashed curves: model prediction. Markers: empirical (30 trials each). \\
+High-$\alpha$ curves approach $1 - 1/k$. The $\alpha = 0$ curve sits near $0$.
+
+\end{frame}
+
+% ============================================================
+\begin{frame}{Main Grid Validation: 21 / 24 Cells Within 3\%}
+
+\begin{columns}[T,onlytextwidth]
+\begin{column}{0.55\textwidth}
+\centering
+\includegraphics[width=\textwidth]{model_validation/model_validation_unique.png}
+
+\vspace{0.2cm}
+\small Predicted vs empirical $u_k$ on the main grid \\
+$(\alpha,k)$ -- markers should land on identity.
+\end{column}
+
+\begin{column}{0.45\textwidth}
+\small
+\textbf{Setup}
+\begin{itemize}
+  \item $\alpha \in \{0, 0.5, 1, 1.5, 2, 3\}$
+  \item $k \in \{10, 25, 50, 100\}$
+  \item 30 trials per cell $\to$ 720 trials
+\end{itemize}
+
+\vspace{0.3cm}
+\textbf{Headline}
+\begin{itemize}
+  \item \textcolor{ok}{21 / 24 cells} within 3\%
+  \item Worst case 8.6\% at small $k$, high $\alpha$ (sampling noise)
+  \item Budget savings ratio matches within $<$2\% in 23/24
+\end{itemize}
+
+\vspace{0.3cm}
+\textbf{This means}
+\begin{quote}\small
+\emph{We can predict privacy cost from the workload distribution alone -- before any query runs.}
+\end{quote}
+\end{column}
+\end{columns}
+
+\end{frame}
+
+% ============================================================
+\begin{frame}{Full Benchmark: 6 Workloads $\times$ 3 Modes}
+
+\centering
+\includegraphics[width=0.78\textwidth]{full_campaign/campaign_budget_SF1.png}
+
+\vspace{0.3cm}
+\small
+$\eps_q = 1$, total budget $B = 100$, $k = 100$, 30 trials per cell. \\
+\textcolor{warn}{Red = NAIVE} (consumes full $B$); \textcolor{accent}{Blue = WORKLOAD-DP}; \textcolor{ok}{Green = TEMPORAL-DP}. \\
+W1 saves 100$\times$, W4 saves 1$\times$ (model correctly predicts no savings).
+
+\end{frame}
+
+% ============================================================
+\begin{frame}{The Model Is Scale-Independent (SF=1 vs SF=10)}
+
+\centering
+\includegraphics[width=0.75\textwidth]{sf10/sf10_validation.png}
+
+\vspace{0.3cm}
+\small
+TPC-H SF=1 (6M lineitem rows) vs SF=10 (60M lineitem rows). \\
+Empirical $\E[u_k]$ \textbf{identical to within 0.03 units}. \\
+The model captures \emph{workload structure}, not data scale.
+
+\end{frame}
+
+% ============================================================
+\begin{frame}{Mixed Heterogeneous Workload: Exact Match}
+
+\textbf{W1 + W4 hybrid:} fraction $f$ repetitive, $1-f$ unique. \\
+By construction, true $u_k = 1 + (1-f)\cdot k$.
+
+\vspace{0.3cm}
+\begin{table}
+\small
+\centering
+\begin{tabular}{c|c|cc}
+\toprule
+$f$ & true $u_k$ & WORKLOAD $\eps$ used & predicted $\eps_q \cdot u_k$ \\
+\midrule
+0.1 & 91 & 45.5 & 45.5 \\
+0.3 & 71 & 35.5 & 35.5 \\
+0.5 & 51 & 25.5 & 25.5 \\
+0.7 & 31 & 15.5 & 15.5 \\
+0.9 & 11 & 5.5  & 5.5  \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\vspace{0.3cm}
+\centering
+\textcolor{ok}{\textbf{Empirical matches prediction to the cent in every cell.}}
+
+\vspace{0.3cm}
+\small
+The closed form $\E[\eps_{\text{wa}}] = \eps_q \cdot u_k$ holds without requiring the workload to be Zipf-parametric.
+
+\end{frame}
+
+% ============================================================
+\begin{frame}{Putting the Model to Work: Predictive Allocator}
+
+\textbf{The new mechanism:} Use the model's $\E[u_k]$ estimate at runtime to choose $\eps_q$.
+
+\vspace{0.3cm}
+\begin{enumerate}
+  \item Observe template frequencies online
+  \item After warmup, estimate $\hat U = \E[u_k \mid \hat p]$ from Proposition~1
+  \item Allocate $\eps_q^{\text{pred}} = B / \hat U$
+\end{enumerate}
+
+\vspace{0.3cm}
+\textbf{Novel because:} PINQ, PrivateSQL, Chorus, DOP-SQL all fix $\eps_q$ offline. \\
+\hspace{2em} This is the first DP-SQL mechanism that adapts $\eps_q$ at runtime from a learned model.
+
+\vspace{0.3cm}
+\centering
+\begin{table}
+\small
+\begin{tabular}{c|l|cc}
+\toprule
+$B$ & Mode & MAE & vs naive \\
+\midrule
+\multirow{2}{*}{1}  & NAIVE      & 101.1 & --- \\
+                     & PREDICTIVE & \textbf{68.7} & \textcolor{ok}{$-32\%$} \\
+\midrule
+\multirow{2}{*}{10} & NAIVE      & 10.1  & --- \\
+                     & PREDICTIVE & \textbf{8.3}  & \textcolor{ok}{$-18\%$} \\
+\midrule
+\multirow{2}{*}{50} & NAIVE      & 2.0   & --- \\
+                     & PREDICTIVE & \textbf{1.58} & \textcolor{ok}{$-21\%$} \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\end{frame}
+
+% ============================================================
+\begin{frame}{AI / NLP Bonus: Semantic Cache via Tree Kernel + AST Embedding}
+
+\textbf{Idea:} two queries with the same AST (modulo literals) might be safe to share a cache entry.
+
+\vspace{0.3cm}
+\textbf{Two similarity signals:}
+\begin{itemize}
+  \item \textbf{Tree Kernel} (Collins--Duffy): count shared subtrees -- deterministic, no training
+  \item \textbf{AST Embedding} (sentence-transformers / CodeBERT): dense vector, cosine similarity
+\end{itemize}
+
+\vspace{0.3cm}
+\begin{alertblock}{Honest negative result}
+The semantic L2 cache fails in \textbf{both directions}:
+\begin{itemize}
+  \item \textbf{False positives:} reuses cached noisy answer on queries with different true answers $\Rightarrow$ wrong by thousands
+  \item \textbf{False negatives:} misses textbook equivalences (commutative AND, integer comparators)
+\end{itemize}
+\textbf{Conclusion:} Semantic similarity $\neq$ formal equivalence. \\
+``AI-powered DP cache'' needs a \emph{symbolic equivalence prover} on top.
+\end{alertblock}
+
+\end{frame}
+
+% ============================================================
+\begin{frame}{Privacy Leakage: Quantified}
+
+\begin{columns}[T,onlytextwidth]
+\begin{column}{0.5\textwidth}
+\centering
+\textbf{Single-query MIA AUC}
+
+\includegraphics[width=\textwidth]{leakage/mia_auc_vs_eps.png}
+
+\vspace{0.1cm}
+\small Empirical tracks theoretical $e^\eps / (1 + e^\eps)$ within 1\%.
+\end{column}
+
+\begin{column}{0.5\textwidth}
+\centering
+\textbf{Reconstruction Error}
+
+\includegraphics[width=\textwidth]{leakage/reconstruction_vs_eps.png}
+
+\vspace{0.1cm}
+\small Differencing attack on a 5-level drill-down. Error scales as $\sqrt{2}/\eps$, matching the difference-of-Laplaces standard deviation.
+\end{column}
+\end{columns}
+
+\end{frame}
+
+% ============================================================
+\begin{frame}{Workload-Level Shadow MIA: A Loose Bound}
+
+\centering
+\includegraphics[width=0.7\textwidth]{workload_leakage/workload_mia_auc.png}
+
+\vspace{0.3cm}
+\small
+Logistic-regression classifier trained on simulated middleware outputs. \\
+\textbf{AUC stays 0.15--0.58} even though the cumulative-$\eps$ bound approaches 1.0. \\
+\textcolor{warn}{Cumulative-$\eps$ is loose for realistic workloads:} most queries don't probe the target.
+
+\end{frame}
+
+% ============================================================
+\begin{frame}{What We Found -- Four Things Worth Stating}
+
+\begin{enumerate}
+\item \textbf{Workload-aware budget is a structural property, not a cache trick.}\\[0.2cm]
+$\E[\eps_{\text{wa}}] = \eps_q \cdot \E[u_k]$ predicts within 3\% on the main grid, \emph{exact} on the mixed W1+W4 workload, and the same at SF=1 and SF=10.\\
+
+\item \textbf{The toy $1-1/k$ rule is the $\alpha \to \infty$ corner case.}\\[0.2cm]
+Not a standalone claim -- the model recovers it and the entire Zipf interior between it and naive composition.\\
+
+\item \textbf{Cumulative-$\eps$ overestimates real attack success.}\\[0.2cm]
+Shadow MIA on W1--W4 stays at AUC 0.15--0.58 vs.\ a 1.0 cumulative bound. Budget tends to be \emph{over}-provisioned in practice.\\
+
+\item \textbf{Semantic similarity is not equivalence.}\\[0.2cm]
+Tree-kernel + embedding admits dangerous false positives and misses textbook equivalences. ``AI-powered DP'' alone is not DP-safe.
+\end{enumerate}
+
+\end{frame}
+
+% ============================================================
+\begin{frame}{Honest Limitations \& Future Work}
+
+\textbf{What this project is not:}
+\begin{itemize}
+  \item \emph{Not} a head-to-head comparison against real DP-SQL systems (PINQ, PrivateSQL, Chorus, DOP-SQL re-implemented from scratch is multi-month work)
+  \item \emph{Not} a real-workload trace -- Zipf parametrization is a controlled sweep
+  \item \emph{Not} a new privacy mechanism in the cryptographic sense
+\end{itemize}
+
+\vspace{0.4cm}
+\textbf{Concrete next steps (paper \S11):}
+\begin{itemize}
+  \item Cache re-release on budget surplus (closes predictive's main gap)
+  \item R\'enyi DP / zCDP composition (tighter bound)
+  \item Burstiness via renewal processes
+  \item Real workload traces (Snowflake / Redshift anonymized)
+  \item Joint budget--leakage bound that beats cumulative-$\eps$
+  \item Equivalence-checked semantic cache (similarity + symbolic prover)
+  \item Multi-table / JOIN via residual sensitivity or R2T
+\end{itemize}
+
+\end{frame}
+
+% ============================================================
+\begin{frame}[standout]
+\textbf{Thank You}
+
+\vspace{0.5cm}
+Refik Can \"Ozta\c{s} \hfill \texttt{N25142279}
+
+\vspace{0.5cm}
+\textbf{Repo:} \texttt{github.com/canoztas/cmp653-project} \\
+\vspace{0.1cm}
+4{,}155 core trials \;$\bullet$\; 62 unit tests \;$\bullet$\; 13-section paper
+
+\vspace{0.5cm}
+Questions?
+\end{frame}
+
+\end{document}
