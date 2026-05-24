@@ -193,26 +193,46 @@
 % ============================================================
 \begin{frame}{\texttt{> 02 ::: differential privacy in 30 seconds}}
 
-\begin{block}{\ttfamily def: $\eps$-differential privacy}
-A randomized mechanism $\mathcal{M}$ is $\eps$-DP if for any two neighbouring databases $D \sim D'$ (differ by one row) and any output $S$:
+\begin{columns}[T,onlytextwidth]
+\begin{column}{0.55\textwidth}
+
+\begin{block}{\ttfamily\small $\eps$-differential privacy}
+$\mathcal{M}$ is $\eps$-DP if for any $D \sim D'$ (differ by 1 row):
 \[
 \Pr[\mathcal{M}(D) \in S] \;\leq\; e^{\eps} \cdot \Pr[\mathcal{M}(D') \in S]
 \]
 \end{block}
 
-\vspace{0.4em}
-{\color{dim}\ttfamily // in practice: Laplace mechanism}
+{\color{dim}\ttfamily\scriptsize // Laplace mechanism}
 \[
-\widetilde{f}(D) \;=\; f(D) + \eta, \qquad \eta \sim \text{Lap}(\Delta f / \eps)
+\widetilde{f}(D) \;=\; f(D) + \eta, \quad \eta \sim \text{Lap}(\Delta f / \eps)
 \]
 
-\vspace{0.2em}
-{\color{dim}\ttfamily // budget composition: $\eps$ accumulates over queries.}
+{\color{dim}\ttfamily\scriptsize // budget composes additively across queries.}
 
-\vspace{0.8em}
-\begin{alertblock}{\ttfamily the engineering question}
-A finite budget $\eps_\text{total}$ is consumed as the workload runs. \\[0.2em]
-\hi{HOW does it degrade?} Predicting this \emph{before deployment} is what this project does.
+\end{column}
+
+\begin{column}{0.43\textwidth}
+\centering
+{\color{dim}\ttfamily\scriptsize // example: Q = COUNT(*) = 1000}\\[0.3em]
+\begin{tabular}{r|c|c}
+\toprule
+{\color{cyan}\small$\eps$} & {\color{cyan}\small scale} & {\color{cyan}\small answer} \\
+\midrule
+{\color{neon}\small 1.0}  & \small$\pm 1$    & \small 999--1001 \\
+{\color{yellow}\small 0.1}  & \small$\pm 10$   & \small 990--1010 \\
+{\color{magenta}\small 0.01} & \small$\pm 100$  & \small 900--1100 \\
+\bottomrule
+\end{tabular}\\[0.4em]
+{\color{dim}\ttfamily\scriptsize smaller $\eps$ $\Rightarrow$ stronger privacy + more noise}
+
+\end{column}
+\end{columns}
+
+\vspace{0.4em}
+\begin{alertblock}{\ttfamily\small the engineering question}
+\small A finite total budget $\eps_\text{total}$ is consumed as the workload runs. \\[0.1em]
+\hi{HOW does it degrade?} Predicting that \emph{before deployment} is what we do.
 \end{alertblock}
 
 \end{frame}
@@ -299,21 +319,20 @@ Given a \hi{workload distribution} and a \hi{privacy budget}, can a \hi{closed-f
 Caching is now \emph{the corner case of the model}, not the contribution.
 
 \vspace{1em}
-{\color{dim}\ttfamily // six concrete deliverables:}
+{\color{dim}\ttfamily // five concrete deliverables:}
 \begin{columns}[T,onlytextwidth]
 \begin{column}{0.5\textwidth}
 \begin{enumerate}
-  \item \hi{Analytical model} (R2)
-  \item \hi{Temporal extension} (R3)
-  \item Middleware + 62 unit tests
+  \item \hi{Analytical model} \dimt{(workload structure $\to$ budget)}
+  \item \hi{Temporal extension} \dimt{(staleness + updates)}
 \end{enumerate}
 \end{column}
 \begin{column}{0.5\textwidth}
 \begin{enumerate}
-\setcounter{enumi}{3}
+\setcounter{enumi}{2}
   \item \hi{Predictive allocator} \dimt{(new mechanism)}
-  \item Leakage analysis (R4)
-  \item 4{,}155-trial campaign (R6)
+  \item Leakage analysis \dimt{(MIA + reconstruction)}
+  \item Empirical campaign \dimt{(model validation)}
 \end{enumerate}
 \end{column}
 \end{columns}
@@ -323,30 +342,57 @@ Caching is now \emph{the corner case of the model}, not the contribution.
 % ============================================================
 \begin{frame}{\texttt{> 06 ::: the model in one slide}}
 
-{\color{dim}\ttfamily // setup: workload of $k$ queries drawn i.i.d.\ from $\{p_i\}_{i=1}^m$.}
+\begin{columns}[T,onlytextwidth]
+\begin{column}{0.55\textwidth}
+
+{\color{dim}\ttfamily\small // setup: $k$ queries drawn i.i.d.\ from $\{p_i\}_{i=1}^m$.}
 
 \vspace{0.3em}
-\begin{block}{\ttfamily prop 1 -- expected unique queries}
+\begin{block}{\ttfamily\small prop 1 -- expected unique queries}
 \[
 \E[u_k] \;=\; \sum_{i=1}^m \bigl[1 - (1-p_i)^k\bigr]
 \]
-{\color{dim}\small (coupon-collector / occupancy on a non-uniform distribution)}
 \end{block}
 
-\begin{block}{\ttfamily prop 2 -- workload-aware budget}
+\begin{block}{\ttfamily\small prop 2 -- workload-aware budget}
 \[
 \E[\eps_\text{wa}] \;=\; \eps_q \cdot \E[u_k]
-\qquad
-S(k) \;=\; 1 - \tfrac{1}{k}\sum_i [1 - (1-p_i)^k]
 \]
 \end{block}
 
-\vspace{0.3em}
-{\color{neon}\ttfamily two limits:}
-\begin{itemize}
-  \item $\alpha \to \infty$ \;(perfect repetition, $p_1 = 1$): $\;S(k) = 1 - 1/k$ \hfill \hi{// the milestone's toy formula}
-  \item $\alpha \to 0$ \;(uniform, $m \to \infty$): $\;S(k) \to 0$ \hfill \hi{// naive composition recovered}
+{\color{neon}\ttfamily\small two limits:}
+\begin{itemize}\small
+  \item $\alpha \to \infty$: $\;S(k) = 1 - 1/k$ \\
+        \dimt{milestone's toy formula}
+  \item $\alpha \to 0$: $\;S(k) \to 0$ \\
+        \dimt{naive composition recovered}
 \end{itemize}
+
+\end{column}
+
+\begin{column}{0.45\textwidth}
+\centering
+{\color{dim}\ttfamily\small // concrete example: dashboard with 5 tiles}\\[0.3em]
+\begin{tabular}{c|c|c}
+\toprule
+{\color{cyan}tile} & {\color{cyan}prob $p_i$} & {\color{cyan}meaning} \\
+\midrule
+A & {\color{neon}0.42} & ``urgent'' \\
+B & {\color{neon}0.26} & ``high'' \\
+C & {\color{neon}0.17} & ``medium'' \\
+D & {\color{yellow}0.10} & ``low'' \\
+E & {\color{magenta}0.05} & ``other'' \\
+\bottomrule
+\end{tabular}\\[0.5em]
+{\color{dim}\ttfamily\scriptsize Zipf($\alpha=1$) over $m=5$}\\[0.5em]
+
+\hi{run $k=100$ queries:}\\[0.2em]
+{\color{cyan}prop 1} predicts $\E[u_k] \approx \hi{4.97}$\\[0.2em]
+{\color{cyan}prop 2} predicts budget $= \eps_q \cdot 4.97$ \\
+{\color{dim}\ttfamily\scriptsize $\Rightarrow$ \hi{95\% savings} vs naive's $100 \eps_q$}
+
+\end{column}
+\end{columns}
 
 \end{frame}
 
@@ -468,11 +514,14 @@ by construction, true $u_k = 1 + (1-f)\cdot k$.}
 {\color{dim}\ttfamily // use the model's $\E[u_k]$ estimate at runtime to choose $\eps_q$:}
 
 \vspace{0.4em}
-\begin{enumerate}
-  \item observe template frequencies online
+\begin{enumerate}\small
+  \item observe template frequencies online \dimt{(first 3--10 queries: warmup)}
   \item estimate $\hat U = \E[u_k \mid \hat p]$ from Proposition 1
-  \item allocate $\eps_q^\text{pred} = B / \hat U$
+  \item allocate $\eps_q^\text{pred} = B / \hat U$ \dimt{(matches the offline optimum)}
 \end{enumerate}
+
+\vspace{0.3em}
+{\color{cyan}\ttfamily\scriptsize // example: $B=10$, $k=100$. Naive picks $\eps_q = 10/100 = 0.1$. If we observe $\hat U=7$ unique templates, predictive picks $\eps_q = 10/7 \approx \hi{1.43}$ -- 14$\times$ tighter noise per release.}
 
 \vspace{0.5em}
 \begin{exampleblock}{\ttfamily novel because}
@@ -501,29 +550,114 @@ This is the \hi{first DP-SQL mechanism} that adapts $\eps_q$ at runtime from a l
 \end{frame}
 
 % ============================================================
-\begin{frame}{\texttt{> 13 ::: ai/nlp bonus -- semantic cache}}
+\begin{frame}{\texttt{> 13a ::: semantic cache -- the idea}}
 
-{\color{dim}\ttfamily // idea: two queries with similar ASTs might share a cache entry.}
+\begin{columns}[T,onlytextwidth]
+\begin{column}{0.42\textwidth}
 
-\vspace{0.3em}
-{\color{neon}\ttfamily // two similarity signals:}
-\begin{itemize}
-  \item \hi{Tree Kernel} (Collins--Duffy 2001) -- shared subtree count, no training
-  \item \hi{AST embedding} (sentence-transformers / CodeBERT) -- cosine on dense vector
-\end{itemize}
+{\color{dim}\ttfamily\small // step 1: SQL $\to$ AST}\\[0.2em]
+{\setlength{\fboxsep}{4pt}\colorbox{bg2}{\parbox{0.95\columnwidth}{
+\ttfamily\scriptsize\color{fg}
+\textcolor{neon}{SELECT} COUNT(*) \\
+\textcolor{neon}{FROM} patients \\
+\textcolor{neon}{WHERE} age > \textcolor{yellow}{30}
+}}}
 
 \vspace{0.5em}
-\begin{alertblock}{\ttfamily honest negative result}
-The semantic L2 cache fails in \hi{both} directions:
-\begin{itemize}
-  \item \hilo{false positives:} reuses cached noisy answer on queries with \emph{different} true answers $\Rightarrow$ wrong by thousands of count units
-  \item \hilo{false negatives:} misses textbook equivalences \\
-  (commutative AND, integer comparators, redundant predicates)
+{\color{dim}\ttfamily\small // step 2: normalize literals $\to$ \texttt{?}}\\[0.2em]
+{\setlength{\fboxsep}{4pt}\colorbox{bg2}{\parbox{0.95\columnwidth}{
+\ttfamily\scriptsize\color{fg}
+\textcolor{neon}{SELECT} COUNT(*) \\
+\textcolor{neon}{FROM} patients \\
+\textcolor{neon}{WHERE} age > \textcolor{magenta}{\textbf{?}}
+}}}
+
+\vspace{0.5em}
+{\color{dim}\ttfamily\small // step 3: compare two ASTs}\\[0.2em]
+{\color{cyan}\ttfamily\scriptsize
+$\bullet$ \hi{Tree Kernel:} count shared subtrees \\
+$\bullet$ \hi{AST embed:} cosine on 384-dim vec}
+
+\end{column}
+\begin{column}{0.56\textwidth}
+\centering
+{\color{dim}\ttfamily\small // step 1 visualized (AST tree):}
+
+\vspace{0.3em}
+\begin{tikzpicture}[
+  scale=0.65,
+  every node/.style={font=\ttfamily\scriptsize},
+  level distance=0.85cm,
+  sibling distance=2.4cm,
+  edge from parent/.style={draw=neon, thick},
+]
+\node[draw=neon, thick, fill=bg2, text=fg, rounded corners, inner sep=2pt] {SELECT}
+  child {node[draw=cyan, fill=bg2, text=cyan, rounded corners, inner sep=2pt] {COUNT(*)}}
+  child {node[draw=cyan, fill=bg2, text=cyan, rounded corners, inner sep=2pt] {FROM}
+    child {node[draw=dim, fill=bg2, text=fg, rounded corners, inner sep=2pt] {patients}}
+  }
+  child {node[draw=cyan, fill=bg2, text=cyan, rounded corners, inner sep=2pt] {WHERE}
+    child {node[draw=neon, fill=bg2, text=fg, rounded corners, inner sep=2pt] {>}
+      child {node[draw=dim, fill=bg2, text=fg, rounded corners, inner sep=2pt] {age}}
+      child {node[draw=magenta, fill=bg2, text=magenta, rounded corners, inner sep=2pt] {30 $\to$ ?}}
+    }
+  };
+\end{tikzpicture}
+
+\vspace{0.3em}
+{\color{dim}\ttfamily\scriptsize // literal `30' becomes a placeholder so \\
+two queries with different ages share the same AST.}
+
+\end{column}
+\end{columns}
+
+\end{frame}
+
+% ============================================================
+\begin{frame}{\texttt{> 13b ::: semantic cache -- honest negative}}
+
+\begin{columns}[T,onlytextwidth]
+\begin{column}{0.5\textwidth}
+
+\begin{block}{\ttfamily\small false positive (admits wrong match)}
+\ttfamily\scriptsize
+\textcolor{cyan}{Q1:} \textcolor{neon}{SELECT COUNT(*)} \textcolor{fg}{FROM adult WHERE} \\
+\hphantom{Q1: }\textcolor{fg}{age $\geq$} \textcolor{yellow}{20} \textcolor{fg}{AND age <} \textcolor{yellow}{30} \\[0.2em]
+\textcolor{cyan}{Q2:} \textcolor{neon}{SELECT COUNT(*)} \textcolor{fg}{FROM adult WHERE} \\
+\hphantom{Q2: }\textcolor{fg}{age $\geq$} \textcolor{yellow}{40} \textcolor{fg}{AND age <} \textcolor{yellow}{50} \\[0.3em]
+\hi{Same AST template} after literal removal. \\
+\hilo{Very different true counts!}\\
+$\Rightarrow$ cache returns wrong answer by 1000s
+\end{block}
+
+\vspace{0.4em}
+\begin{block}{\ttfamily\small false negative (misses true match)}
+\ttfamily\scriptsize
+\textcolor{cyan}{Q1:} \textcolor{fg}{... WHERE} \textcolor{neon}{a AND b} \\
+\textcolor{cyan}{Q2:} \textcolor{fg}{... WHERE} \textcolor{neon}{b AND a} \\[0.3em]
+Tree Kernel uses \hi{ordered children}: \\
+\textcolor{magenta}{kernel score $<$ 0.95} $\Rightarrow$ miss
+\end{block}
+
+\end{column}
+\begin{column}{0.5\textwidth}
+
+\begin{alertblock}{\ttfamily takeaway}
+\textbf{semantic similarity $\neq$ formal equivalence}
+
+\vspace{0.4em}
+\begin{itemize}\small
+  \item AI tools can \hi{measure} how alike two queries look
+  \item but DP requires \hilo{provable equivalence} of answers
+  \item ``AI-powered DP cache'' alone is \hilo{not DP-safe}
 \end{itemize}
-\vspace{0.2em}
-\textbf{\hi{semantic similarity $\neq$ formal equivalence.}} \\
-``AI-powered DP cache'' needs a symbolic equivalence prover on top.
+
+\vspace{0.4em}
+\textbf{Future direction:} pair similarity tools with a \\ symbolic equivalence prover (predicate normalization, range merging, alpha-conversion) before admitting any cache match.
 \end{alertblock}
+
+\end{column}
+\end{columns}
 
 \end{frame}
 
@@ -551,7 +685,7 @@ The semantic L2 cache fails in \hi{both} directions:
 \end{frame}
 
 % ============================================================
-\begin{frame}{\texttt{> 15 ::: workload-level shadow MIA -- a loose bound}}
+\begin{frame}{\texttt{> 15 ::: shadow MIA across W1-W4}}
 
 \centering
 \includegraphics[width=0.8\textwidth, keepaspectratio]{workload_leakage/workload_mia_auc.png}
@@ -632,8 +766,7 @@ logistic-regression classifier trained on simulated middleware outputs \\[0.2em]
   {\ttfamily\color{neon}\Huge\bfseries > thank you \_}\\[1.2em]
   {\ttfamily\color{cyan}\large questions ?}\\[2em]
   {\ttfamily\color{fg}\small refik can \"ozta\c{s}} \;{\ttfamily\color{dim}//}\; {\ttfamily\color{dim}\small N25142279}\\[0.6em]
-  {\ttfamily\color{dim}\footnotesize repo:} {\ttfamily\color{neon}\small github.com/canoztas/cmp653-project}\\[0.5em]
-  {\ttfamily\color{dim}\footnotesize 4{,}155 trials \;\textbar\; 62 unit tests \;\textbar\; 13-section paper}
+  {\ttfamily\color{dim}\footnotesize repo:} {\ttfamily\color{neon}\small github.com/canoztas/cmp653-project}
   \vfill
 \end{frame}
 
