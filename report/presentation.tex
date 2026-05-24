@@ -135,34 +135,34 @@
 \end{frame}
 
 % ============================================================
-\begin{frame}{\texttt{> 01 ::: aggregate queries are not safe}}
+\begin{frame}[fragile]{\texttt{> 01 ::: aggregate queries are not safe}}
 
 \begin{columns}[T,onlytextwidth]
 \begin{column}{0.5\textwidth}
 
-{\color{dim}\ttfamily // intuition (wrong):}\\
-``Aggregates return totals, not rows -- safe.''
-
-\vspace{0.4em}
-{\color{magenta}\ttfamily // reality:}\\
-Two overlapping COUNTs isolate one person.
+{\color{dim}\ttfamily\small // intuition (wrong)}\\
+{\small ``aggregates return totals, not rows -- safe.''}
 
 \vspace{0.5em}
-\begin{lstlisting}
--- 12 patients with HIV
-SELECT COUNT(*) FROM patients
-WHERE zip='06897' AND
-      disease='HIV';
+{\color{magenta}\ttfamily\small // reality}\\
+{\small two overlapping COUNTs isolate one person.}
 
--- 11 with HIV, age <> 43
-SELECT COUNT(*) FROM patients
-WHERE zip='06897' AND
-      disease='HIV' AND
-      age <> 43;
-\end{lstlisting}
+\vspace{0.6em}
+{\setlength{\fboxsep}{6pt}\colorbox{bg2}{\parbox{0.92\columnwidth}{
+\ttfamily\scriptsize\color{fg}
+\textcolor{dim}{-- 12 patients with HIV}\\
+\textcolor{neon}{SELECT} COUNT(*) \textcolor{neon}{FROM} patients\\
+\textcolor{neon}{WHERE} zip=\textcolor{yellow}{'06897'} \textcolor{neon}{AND}\\
+\hphantom{WHERE\ }disease=\textcolor{yellow}{'HIV'};\\[0.4em]
+\textcolor{dim}{-- 11 with HIV, age <> 43}\\
+\textcolor{neon}{SELECT} COUNT(*) \textcolor{neon}{FROM} patients\\
+\textcolor{neon}{WHERE} zip=\textcolor{yellow}{'06897'} \textcolor{neon}{AND}\\
+\hphantom{WHERE\ }disease=\textcolor{yellow}{'HIV'} \textcolor{neon}{AND}\\
+\hphantom{WHERE\ }age <> \textcolor{yellow}{43};
+}}}
 
-\vspace{0.2em}
-{\color{magenta}\ttfamily $\Rightarrow$ the 43-year-old in 06897 has HIV.}
+\vspace{0.5em}
+{\color{magenta}\ttfamily\small $\Rightarrow$ the 43-year-old in 06897 has HIV.}
 
 \end{column}
 \begin{column}{0.5\textwidth}
