@@ -112,6 +112,9 @@ Roth and Roughgarden's median mechanism~\cite{rothroughgarden2010median} and Har
 \paragraph{Modern / production DP-SQL.}
 Tumult Analytics~\cite{berghel2022tumult} is a production-grade Python/Spark framework with multi-table sessions, private joins, and explicit adaptive composition; OpenDP and SmartNoise SQL~\cite{opendp2023} wrap existing databases for SQL/Pandas/Spark deployment. Wilson et al.'s DP-SQL with Bounded User Contribution~\cite{wilson2020bounded} introduces row-ownership and contribution-bounding operators in relational algebra, addressing user-level DP for production engines. These efforts emphasize deployment quality (accounting correctness, scalability, multi-backend coverage); they neither claim nor implement closed-form workload modelling, predictive online allocation, or temporal coupling.
 
+\paragraph{Recent adjacent systems (2021--2026).}
+Four recent systems sharpen the boundary of this work's contribution. \textbf{DProvDB}~\cite{niu2023dprovdb} introduces multi-analyst provenance tracking and budget partitioning, addressing \emph{who} spends budget rather than predicting \emph{how much} a workload will spend. \textbf{DP-SQLP}~\cite{kellaris2014dpsqlp} (and follow-ups on continual observation) targets streaming aggregate release at scale, which overlaps with our temporal axis (D) but treats releases as a per-event stream rather than a template-distribution model. \textbf{Qrlew}~\cite{sarus2024qrlew} is an open-source SQL-to-DP-SQL rewriter from Sarus Technologies; rich type and row-ownership tracking enable correct contribution bounding, but the rewriter does not maintain a closed-form workload model. \textbf{DPSQL+}~\cite{dpsqlplus2024} formalises a validator--accountant--backend architecture and evaluates join-heavy TPC-H workloads under a fixed global budget. Empirical-benchmark work like \textbf{DPBench}~\cite{hay2016dpbench} reminds us that the relative ranking of DP algorithms is highly dataset- and scale-dependent---which is why we keep validation (G) as a separate axis. None of these adjacent systems combines a closed-form repeated-workload model, a predictive online allocator, temporal staleness coupling, and an AI/AST-based semantic cache in the same middleware.
+
 \paragraph{Tree kernels and code embeddings.}
 The semantic L2 cache layer I explore in §\ref{sec:semantic} builds on two lines of work. Collins and Duffy~\cite{collins2001convolution} introduced the tree convolution kernel that counts shared subtrees between two parse trees; subsequent work by Moschitti~\cite{moschitti2006trees} and others applied it to relation extraction and question answering. For neural representations, Feng et al.~\cite{feng2020codebert} pre-trained CodeBERT on source-code tokens and Guo et al.~\cite{guo2021graphcodebert} extended this with data-flow graphs in GraphCodeBERT. I do not propose a new code-representation method; I use these tools to detect alpha-equivalent SQL queries that exact-hash matching misses, and I measure the resulting privacy/utility tradeoff.
 
@@ -234,7 +237,7 @@ GraphCodeBERT \cite{guo2021graphcodebert}
 \end{table*}
 
 \paragraph{Our differentiation.}
-Reading Table~\ref{tab:related-comparison} column by column, the combination \textbf{A+B+D}---closed-form workload model + predictive online allocator + temporal coupling---is empty in the surveyed literature. Workload-aware DP mechanisms (Matrix Mechanism~\cite{li2010mm}, HDMM~\cite{mckenna2018hdmm}, PrivateSQL~\cite{kotsogiannis2019privatesql}) model linear-query correlation or representative-workload views, not template repetition; their allocation is offline. Online / adaptive DP (MWEM~\cite{hardtligett2012mwem}, PMW~\cite{hardtrothblum2010pmw}, median mechanism~\cite{rothroughgarden2010median}, APEx~\cite{ge2019apex}, Pythia~\cite{kotsogiannis2017pythia}) adapts queries, accuracy, or algorithms at runtime but does not forecast future budget consumption from an explicit workload distribution model, and none addresses temporal freshness. Production DP-SQL (Tumult Analytics~\cite{berghel2022tumult}, OpenDP/SmartNoise~\cite{opendp2023}, Bounded User Contribution~\cite{wilson2020bounded}) provides correct accounting and scale but neither claims nor implements the analytical model layer. Finally, the AI/AST tools we use (tree kernels, CodeBERT, GraphCodeBERT) come from the representation-learning literature and have not been applied to DP-SQL cache lookup; our contribution there is the bridge---and the \emph{honest negative} that semantic similarity alone is not a substitute for formal equivalence (§\ref{sec:semantic}).
+The differentiation is best stated as a \emph{combination} argument, not as ``beating'' any single prior system. The literature breaks into five lines that have remained separate: (i) practical SQL/DBMS DP engines (PINQ, FLEX, Chorus, Tumult, OpenDP/SmartNoise, Wilson et al., Qrlew, DProvDB, DPSQL+); (ii) workload-aware release mechanisms (Matrix Mechanism, HDMM); (iii) online / adaptive query answering (MWEM, PMW, median mechanism, APEx, Pythia); (iv) relational sensitivity for joins and conjunctive queries (Residual Sensitivity, R2T, Better than Composition); and (v) code / AST representation learning (tree kernels, CodeBERT, GraphCodeBERT). Each line is strong inside its own remit, but the surveyed evidence shows that the \emph{intersection}---a single DP-SQL middleware that (a) models template repetition skew with a closed-form prediction, (b) forecasts future budget consumption online, (c) couples budget to data freshness, and (d) tests semantic similarity as a privacy-aware cache key---is empty. The strongest defensible claim is therefore not ``we beat APEx / Tumult / HDMM,'' but ``these five lines have not combined; we combine them and report the result---including where the combination fails (the honest negative of §\ref{sec:semantic}).''
 
 \paragraph{Anticipated objections.}
 A reviewer may ask whether this work is a variant of APEx~\cite{ge2019apex} or Pythia~\cite{kotsogiannis2017pythia}: it is not, because both pick mechanisms / parameters for the \emph{current} query, while we forecast \emph{future} budget consumption from an analytical model. A second objection may be that workload-aware DP is already covered by Matrix Mechanism~\cite{li2010mm} or HDMM~\cite{mckenna2018hdmm}: their notion of ``workload'' is a linear-query correlation matrix, not a distribution over SQL templates with repetition skew, and their allocation is static. A third objection may be that this is a production-engineering paper like Tumult Analytics~\cite{berghel2022tumult}: it is not---our system stays at $\sim$1.4 KLOC and a single-table aggregate scope; the contribution is the model layer that any of those production systems could in principle adopt.
@@ -1048,6 +1051,31 @@ OpenDP Project and SmartNoise. 2023.
 R. J. Wilson, C. Y. Zhang, W. Lam, D. Desfontaines, D. Simmons-Marengo, and B. Gipson. 2020.
 \newblock Differentially Private SQL with Bounded User Contribution.
 \newblock {\em PoPETs} 2020, 4, 230--250.
+
+\bibitem{niu2023dprovdb}
+S. Niu et al. 2023.
+\newblock DProvDB: Differentially Private Query Processing with Multi-Analyst Provenance.
+\newblock In {\em SIGMOD}.
+
+\bibitem{kellaris2014dpsqlp}
+G. Kellaris, S. Papadopoulos, X. Xiao, and D. Papadias. 2014--2023 line.
+\newblock Differentially Private Continual Observation / Streaming SQL Aggregates (DP-SQLP).
+\newblock {\em PVLDB} and follow-ups.
+
+\bibitem{sarus2024qrlew}
+Sarus Technologies. 2024.
+\newblock Qrlew: A SQL-to-DP-SQL Rewriter.
+\newblock Open-source project, \url{https://github.com/Qrlew/qrlew}.
+
+\bibitem{dpsqlplus2024}
+DPSQL+ authors. 2024.
+\newblock DPSQL+: Validator-Accountant-Backend Architecture for DP-SQL.
+\newblock Recent system paper (manual bibliographic verification recommended).
+
+\bibitem{hay2016dpbench}
+M. Hay, A. Machanavajjhala, G. Miklau, Y. Chen, and D. Zhang. 2016.
+\newblock Principled Evaluation of Differentially Private Algorithms using DPBench.
+\newblock In {\em SIGMOD}.
 
 \bibitem{bun2016concentrated}
 M. Bun and T. Steinke. 2016.
