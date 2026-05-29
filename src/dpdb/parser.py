@@ -15,6 +15,7 @@ class AggregateInfo:
     func: str          # COUNT, SUM, AVG
     column: Optional[str]  # None for COUNT(*)
     alias: Optional[str]
+    position: int = -1  # index within the SELECT list = result column index
 
 
 @dataclass
@@ -66,6 +67,12 @@ def parse_query(sql: str) -> ParsedQuery:
     if joins:
         raise ParseError("JOINs are not supported in the current version")
 
+    # Reject HAVING: it filters groups on a data-dependent aggregate condition,
+    # which is an unaccounted private selection (group membership leaks the true
+    # aggregate crossing the threshold) and is outside the supported DP subset.
+    if ast.args.get("having") is not None:
+        raise ParseError("HAVING is not supported in the current version")
+
     # Extract GROUP BY first so we can validate SELECT against it
     group_by = []
     group_clause = ast.args.get("group")
@@ -77,11 +84,14 @@ def parse_query(sql: str) -> ParsedQuery:
                 group_by.append(g.sql())
     group_by_set = set(group_by)
 
-    # Extract aggregates from SELECT, enforce GROUP BY for non-aggregate columns
+    # Extract aggregates from SELECT, enforce GROUP BY for non-aggregate columns.
+    # Record each aggregate's position in the SELECT list so the noise mechanism
+    # can target the correct result column regardless of column ordering.
     aggregates = []
-    for select_expr in ast.expressions:
+    for pos, select_expr in enumerate(ast.expressions):
         agg = _extract_aggregate(select_expr)
         if agg:
+            agg.position = pos
             aggregates.append(agg)
             continue
         # Non-aggregate: must be a column AND must appear in GROUP BY
@@ -136,27 +146,34 @@ def _extract_aggregate(node: exp.Expression) -> Optional[AggregateInfo]:
             func_name = type(found).__name__.upper()
             if func_name not in SUPPORTED_AGGREGATES:
                 continue
-            col_expr = found.this
-            if isinstance(col_expr, exp.Star):
-                column = None
-            elif isinstance(col_expr, exp.Column):
-                column = col_expr.name
-            else:
-                column = col_expr.sql() if col_expr else None
-            return AggregateInfo(func=func_name, column=column, alias=alias)
+            return AggregateInfo(
+                func=func_name, column=_agg_column(found.this), alias=alias
+            )
 
     if isinstance(node, (exp.Count, exp.Sum, exp.Avg)):
         func_name = type(node).__name__.upper()
-        col_expr = node.this
-        if isinstance(col_expr, exp.Star):
-            column = None
-        elif isinstance(col_expr, exp.Column):
-            column = col_expr.name
-        else:
-            column = col_expr.sql() if col_expr else None
-        return AggregateInfo(func=func_name, column=column, alias=alias)
+        return AggregateInfo(
+            func=func_name, column=_agg_column(node.this), alias=alias
+        )
 
     return None
+
+
+def _agg_column(col_expr: Optional[exp.Expression]) -> Optional[str]:
+    """Resolve the column an aggregate is applied to, rejecting out-of-scope args.
+
+    DISTINCT and arbitrary expressions are not part of the supported DP subset
+    and must be rejected rather than silently stringified into a bogus column
+    name (which previously produced a confidently-labelled but ill-defined
+    sensitivity).
+    """
+    if isinstance(col_expr, exp.Distinct):
+        raise ParseError("DISTINCT aggregates are not supported in the current version")
+    if col_expr is None or isinstance(col_expr, exp.Star):
+        return None
+    if isinstance(col_expr, exp.Column):
+        return col_expr.name
+    raise ParseError(f"Unsupported aggregate argument: {col_expr.sql()}")
 
 
 def _extract_predicates(node: exp.Expression) -> list[str]:

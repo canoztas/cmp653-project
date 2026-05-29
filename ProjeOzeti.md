@@ -53,7 +53,7 @@ Workload, m template'li bir dagilim {p_i}'den i.i.d. cekiliyor. 5 proposition tu
 ### R4: Leakage Deneyleri (Calistirildi)
 - **Single-query MIA:** Empirical AUC, teorik `e^ε/(1+e^ε)` bound'una ≤%1 hatayla
 - **Reconstruction (drilldown):** Hata `~2/ε` olcekte, beklenen Laplace standart sapmasiyla uyumlu
-- **Shadow-model MIA across W1-W4** (32 cell × 60 shadow run): AUC 0.15-0.58 (cumulative-ε bound 1.0'dan COK dusuk). Honest finding: cumulative budget bound gerc̆ek attack icin loose
+- **Shadow-model MIA across W1-W4** (32 cell × 60 shadow run): AUC 0.14-0.58 (cumulative-ε bound 1.0'dan COK dusuk). Honest finding: cumulative budget bound gerc̆ek attack icin loose
 
 ### R5: Inline Yorumlar Tek Tek
 - **AVG (honest):** Mevcut implementasyon AVG'ye dogrudan Laplace uyguluyor (sensitivity = column bound, worst-case group=1). Decomposed SUM/COUNT yaklasimi §11 Future Work'te. Paper ve kod artik tutarli.
@@ -86,7 +86,7 @@ Iki score yuksek esikleri (K_norm ≥ 0.95 AND cosine ≥ 0.98) gectiginde cache
 
 ---
 
-## Predictive Budget Allocator (Section 9 — Yeni Mekanizma)
+## Predictive Budget Allocator (Section 10 — Yeni Mekanizma)
 
 Brief'in onerdigi "yeni mechanism" — modelin pratik kullanimi:
 
@@ -101,7 +101,7 @@ Brief'in onerdigi "yeni mechanism" — modelin pratik kullanimi:
 
 ---
 
-## Section 10 — Future Work (6 madde)
+## Section 11 — Future Work (rapor §11'de 8 madde; başlıcaları)
 
 1. **Cache re-release on budget surplus** — predictive'in en buyuk eksigi
 2. **Rényi DP / zCDP composition** — daha siki budget bound
@@ -120,12 +120,12 @@ Brief'in onerdigi "yeni mechanism" — modelin pratik kullanimi:
 | Follow-up trial (§8-§10) | **~3,950** |
 | Aggregated result row | 5,613 |
 | Toplam query | ~150,000 |
-| Unit test | **62/62 passing** |
+| Unit test | **73/73 passing** |
 | Figure (PDF + PNG) | 24 |
 | Workload | 6 |
 | Execution mode | 6 (Exact, Naive, Workload, Semantic, Temporal, **Predictive**) |
 | Dataset | TPC-H SF=1 (6M), SF=10 (60M), UCI Adult (48K) |
-| Code | ~1.5 KLOC Python |
+| Code | ~1.4 KLOC Python (core middleware) |
 
 ---
 
@@ -140,7 +140,7 @@ Brief'in onerdigi "yeni mechanism" — modelin pratik kullanimi:
 | R5 | Inline comments | ✅ Her birine cevap |
 | R6 | Benchmark campaign | ✅ SF=1+SF=10, ε sweep, 30 trial/cell |
 | Reproducibility | ✅ figure-to-script tablo |
-| Paper | ✅ final_report.tex (12 section, 8 embed figure) |
+| Paper | ✅ final_report.tex (12 section, 9 embed figure) |
 | Response-to-reviewer | ✅ response_to_reviewer.md |
 | **BONUS** Predictive allocator | ✅ Yeni mekanizma + experiment |
 | **BONUS** Future Work | ✅ 6 madde |

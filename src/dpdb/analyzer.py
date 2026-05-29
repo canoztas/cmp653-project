@@ -71,13 +71,16 @@ def _sensitivity_for_aggregate(
                 f"No upper bound configured for {table}.{agg.column}. "
                 "Add it to column_bounds in config.yaml."
             )
-        # AVG is handled via noisy SUM / noisy COUNT in the mechanism layer.
-        # We return the SUM sensitivity here; the mechanism handles decomposition.
+        # AVG is released as a single conservative Laplace mechanism with
+        # sensitivity = column bound B_c (worst case: group of size one). There is
+        # NO SUM/COUNT decomposition; that amortization is future work (report
+        # Future Work). Using a fixed B_c avoids the implicit n-leak of the
+        # empirical-mean mechanism Lap(B_c/(n*eps)), since the group size n is private.
         return SensitivityResult(
             func="AVG",
             column=agg.column,
             sensitivity=bound,
-            notes=f"Decomposed as noisy_sum/noisy_count. Bound: {bound}",
+            notes=f"Single Laplace release; worst-case bound B_c = {bound} (group of size 1)",
         )
 
     raise SensitivityError(f"Unsupported aggregate: {agg.func}")

@@ -92,3 +92,47 @@ class TestInvalidQueries:
             parse_query(
                 "SELECT l_returnflag, COUNT(*) FROM lineitem GROUP BY l_shipmode"
             )
+
+    def test_having_rejected(self):
+        # HAVING filters groups on a data-dependent aggregate condition; it is an
+        # unaccounted private selection and must be rejected like JOIN/subquery.
+        with pytest.raises(ParseError, match="HAVING"):
+            parse_query(
+                "SELECT l_returnflag, COUNT(*) FROM lineitem "
+                "GROUP BY l_returnflag HAVING COUNT(*) > 5"
+            )
+
+    def test_count_distinct_rejected(self):
+        # COUNT(DISTINCT col) is outside the supported subset; reject rather than
+        # stringify the DISTINCT node into a bogus column name.
+        with pytest.raises(ParseError, match="DISTINCT"):
+            parse_query("SELECT COUNT(DISTINCT l_returnflag) FROM lineitem")
+
+
+class TestAggregatePosition:
+    """Regression tests for the column-ordering privacy bug: each aggregate's
+    SELECT-list position must be recorded so the noise mechanism targets the
+    correct result column regardless of ordering."""
+
+    def test_group_key_first(self):
+        q = parse_query(
+            "SELECT l_returnflag, COUNT(*) FROM lineitem GROUP BY l_returnflag"
+        )
+        assert len(q.aggregates) == 1
+        assert q.aggregates[0].position == 1  # COUNT is the 2nd SELECT item
+
+    def test_aggregate_first(self):
+        # The dangerous ordering: aggregate before the group key.
+        q = parse_query(
+            "SELECT COUNT(*), l_returnflag FROM lineitem GROUP BY l_returnflag"
+        )
+        assert len(q.aggregates) == 1
+        assert q.aggregates[0].position == 0  # COUNT is the 1st SELECT item
+
+    def test_multiple_aggregate_positions(self):
+        q = parse_query(
+            "SELECT SUM(l_quantity), l_returnflag, COUNT(*) "
+            "FROM lineitem GROUP BY l_returnflag"
+        )
+        positions = [a.position for a in q.aggregates]
+        assert positions == [0, 2]  # SUM at 0, COUNT at 2 (group key at 1)

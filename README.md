@@ -29,7 +29,7 @@ Plus three honest experimental findings (the kind of negative results that make 
 | # | Finding | Why it's interesting |
 |---|---------|-----------------------|
 | A | **Semantic L2 cache via Tree Kernel + AST Embedding** gives 90% budget savings BUT wrong answers when the matched queries are not alpha-equivalent | First measured trade-off; warns against naive "AI-powered DP cache" designs |
-| B | **Workload-level shadow-model MIA AUC** stays at 0.15–0.58, well below the cumulative-$\eps$ bound of 1.0 | Cumulative-budget upper bounds are loose for realistic multi-query attacks; signal-to-noise is governed by per-query $\eps$, not total |
+| B | **Workload-level shadow-model MIA AUC** stays at 0.14–0.58, well below the cumulative-$\eps$ bound of 1.0 | Cumulative-budget upper bounds are loose for realistic multi-query attacks; signal-to-noise is governed by per-query $\eps$, not total |
 | C | **Model is dataset-scale-independent** (SF=1 vs SF=10 within 0.03 units) and **$\eps_q$-independent** (cancels structurally) | The model captures workload structure, not data scale—useful for capacity planning before deployment |
 
 ---
@@ -59,7 +59,7 @@ Full benchmark campaign: **4,155 core trials, ~150K queries, six experimental sw
 
 - **Single-query MIA AUC** matches theoretical $e^\eps/(1+e^\eps)$ within ≤1%
 - **Reconstruction error** scales as $2/\eps$ as predicted
-- **Workload-level shadow-model MIA AUC** = 0.15–0.58 (much lower than the cumulative bound 1.0)
+- **Workload-level shadow-model MIA AUC** = 0.14–0.58 (much lower than the cumulative bound 1.0)
 
 ---
 
@@ -95,12 +95,12 @@ experiments/
   aggregate_all_results.py   Combine all CSVs → results/REPORT.md
 
 report/
-  final_report.tex            12-section paper, 8 embedded figures, 18 references
+  final_report.tex            12-section paper, 9 embedded figures, 39 references
   response_to_reviewer.md     Comment-by-comment mapping of instructor feedback
   R2_model_sketch.md          Math derivation + limit checks for the model
   milestone_report.tex        Original milestone (kept for reference)
 
-tests/  (62 unit tests, all passing)
+tests/  (73 unit tests, all passing)
   test_parser.py    test_mechanisms.py  test_budget.py    test_template.py
   test_semantic.py  test_model.py       test_predictive.py
 ```
@@ -209,8 +209,8 @@ Each item from the instructor's revision brief is addressed and traceable.
 | Deliverable 1 | Revised paper | report/final_report.tex |
 | Deliverable 2 | Reproducibility artifact + figure-to-script map | this README's table above |
 | Deliverable 3 | Response-to-reviewer | report/response_to_reviewer.md |
-| Bonus | Predictive allocator (Section 9) | src/dpdb/predictive.py + experiments/predictive_comparison.py |
-| Bonus | Six items in Section 10 Future Work | report/final_report.tex §10 |
+| Bonus | Predictive allocator (Section 10) | src/dpdb/predictive.py + experiments/predictive_comparison.py |
+| Bonus | Eight items in Section 11 Future Work | report/final_report.tex §11 |
 
 ---
 
@@ -220,24 +220,24 @@ The paper (`report/final_report.tex`) follows a clean 12-section narrative:
 
 ```
 §1  Introduction              ─ why the milestone framing was thin, what the new contribution is
-§2  Background & Related     ─ DP foundations + private SQL systems + tree kernels + code embeddings
+§2  Background & Related     ─ DP foundations + private SQL systems + DP caching + tree kernels
 §3  Threat Model              ─ adversary, neighbouring DBs, supported SQL, sensitivities (AVG justified)
 §4  Analytical Model          ─ five propositions + limit verification (R2)
 §5  Temporal Extension        ─ Proposition 6, three regimes (R3)
 §6  System Implementation     ─ middleware architecture + new Algorithm 1 (R5)
 §7  Empirical Validation      ─ 4155-trial core campaign + cross-scale (R6)
 §8  Semantic Cache             ─ Tree Kernel + AST Embedding + honest negative
-§9  Predictive Allocator      ─ model-driven adaptive ε mechanism (new contribution)
-§10 Future Work                ─ six concrete next steps
-§11 Discussion                 ─ where the model wins, where it loses
-§12 Conclusion
+§9  Privacy Leakage Analysis  ─ MIA + reconstruction + shadow-model MIA (R4)
+§10 Predictive Allocator      ─ model-driven adaptive ε mechanism (new contribution)
+§11 Future Work                ─ eight concrete next steps
+§12 Discussion & Conclusion    ─ where the model wins, where it loses
 ```
 
 ---
 
 ## Status
 
-- **62 unit tests passing**
+- **73 unit tests passing**
 - **~8,000 experimental trials** across 13 scripts (4,155 in the core six-sweep §7 campaign, ~3,950 in the follow-up §8–§10 experiments). The aggregated long-form CSV at `results/ALL_RESULTS.csv` records 5,613 result rows.
 - **24 figures** generated and tracked in `results/`
 - **Paper** ready to compile on Overleaf (LaTeX source + embedded figure paths)

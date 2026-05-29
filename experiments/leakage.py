@@ -227,10 +227,11 @@ def plot_reconstruction(df: pd.DataFrame, output_dir: Path):
     fig, ax = plt.subplots(figsize=(10, 6))
     ax.plot(df["eps_per_query"], df["mean_abs_error"], "o-", label="Mean abs error per diff", linewidth=2)
     ax.plot(df["eps_per_query"], df["p95_abs_error"], "s--", label="p95 abs error per diff", linewidth=2)
-    # Theoretical: |noisy_a - noisy_b| has scale 2/eps (sum of two Laplace noises)
+    # Theoretical mean absolute pair-difference E|eta_1 - eta_2| = 3/(2 eps) = 1.5/eps
+    # for two independent Lap(1/eps) variables (its std is the larger 2/eps).
     eps_grid = np.logspace(np.log10(df["eps_per_query"].min()), np.log10(df["eps_per_query"].max()), 100)
-    ax.plot(eps_grid, np.sqrt(2) * np.sqrt(2) / eps_grid, "k--",
-            label=r"Theoretical std of $\eta_1 - \eta_2$ : $2/\varepsilon$", alpha=0.7)
+    ax.plot(eps_grid, 1.5 / eps_grid, "k--",
+            label=r"Theoretical mean $E|\eta_1 - \eta_2|$ : $1.5/\varepsilon$", alpha=0.7)
     ax.set_xscale("log")
     ax.set_yscale("log")
     ax.set_xlabel(r"Per-query privacy parameter $\varepsilon$")

@@ -212,27 +212,23 @@ class DPMiddleware:
         # Split epsilon among aggregates (sequential composition, conservative)
         eps_per_agg = epsilon / n_aggs
 
-        # Determine which columns in the result are aggregates vs group-by
-        n_group = len(parsed.group_by)
-        # Aggregate columns come after group-by columns in the result
-        agg_start = n_group
-
+        # Map each aggregate to its actual result-column index using the position
+        # recorded by the parser. Do NOT assume group-by columns come first: with
+        # an aggregate-first SELECT (e.g. `SELECT COUNT(*), grp ... GROUP BY grp`)
+        # the positional assumption would noise the group key and release the true
+        # aggregate in the clear — a differential-privacy violation.
         noisy_rows = []
         for row in true_rows:
             row_list = list(row)
             for i, sens in enumerate(sensitivities):
-                col_idx = agg_start + i
+                col_idx = parsed.aggregates[i].position
                 true_val = float(row_list[col_idx]) if row_list[col_idx] is not None else 0.0
 
-                if sens.func == "AVG":
-                    # AVG decomposition: we need count for this group
-                    # For simplicity, add noise proportional to bound/count
-                    # Since we don't have per-group count readily, use the Laplace
-                    # mechanism on the AVG directly with sensitivity = bound/1 = bound
-                    # (worst case: group of size 1)
-                    noisy_val = laplace_mechanism(true_val, sens.sensitivity, eps_per_agg)
-                else:
-                    noisy_val = laplace_mechanism(true_val, sens.sensitivity, eps_per_agg)
+                # AVG is released as a single conservative Laplace mechanism with
+                # sensitivity = column bound B_c (worst case: group of size one).
+                # A SUM+COUNT decomposition that amortizes noise by group size is
+                # future work (see report Future Work); it is NOT done here.
+                noisy_val = laplace_mechanism(true_val, sens.sensitivity, eps_per_agg)
 
                 # Post-processing: COUNT should be non-negative integer
                 if sens.func == "COUNT":

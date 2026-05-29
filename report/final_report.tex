@@ -54,7 +54,7 @@
 \email{N25142279}
 
 \begin{abstract}
-Practical SQL workloads repeat templates---dashboards, drill-downs, and parametric filter sweeps---while most privacy accounting treats queries in isolation. I present an analytical model that relates workload structure (template repetition skew, group cardinality, temporal staleness) to privacy budget consumption and utility, and instantiate it inside a differentially private SQL middleware over PostgreSQL/DuckDB and TPC-H. The model gives a closed-form expression for the expected budget as a product of the per-query budget and the expected unique-template count, with two limits: deterministic repetition reduces to the $1-1/k$ savings ratio, and uniform sampling over many templates recovers naive sequential composition. A temporal extension with staleness tolerance $\tau$ and Poisson update rate $\lambda$ couples budget consumption with data freshness. I additionally derive a predictive online allocator that targets the offline-optimal $\eps_q^* = B/u_k$ from the model's runtime estimate of $u_k$, trading a $4$--$17\%$ MAE reduction for an explicit $12$--$31\%$ query-rejection rate when the budget is exhausted. The model is empirically validated on a $4{,}155$-trial campaign covering Zipf-parameterized workloads ($\alpha \in \{0,\ldots,10\}$), six workload families (W1--W4 plus two TPC-H parametric variants), four per-query privacy parameters ($\eps_q \in \{0.1, 0.5, 1.0, 2.0\}$), and TPC-H scale factors SF=1 and SF=10 (60M lineitem rows). The model's predictions match empirical means within $<3\%$ in 21 of 24 main-grid cells and within $0.03$ units across the SF=1/SF=10 cross-scale test. Three leakage experiments---single-query MIA, differencing-style reconstruction on a five-level drill-down, and shadow-model MIA across W1--W4---track tight theoretical bounds and expose slack in the cumulative-budget bound. The middleware is a $\sim$1.4 KLOC Python prototype with 62 passing unit tests; exact-repeat caching is treated as a corollary of the model's $\alpha\to\infty$ limit rather than as a contribution.
+Practical SQL workloads repeat templates---dashboards, drill-downs, and parametric filter sweeps---while most privacy accounting treats queries in isolation. I present an analytical model that relates workload structure (template repetition skew, group cardinality, temporal staleness) to privacy budget consumption and utility, and instantiate it inside a differentially private SQL middleware over PostgreSQL/DuckDB and TPC-H. The model gives a closed-form expression for the expected budget as a product of the per-query budget and the expected unique-template count, with two limits: deterministic repetition reduces to the $1-1/k$ savings ratio, and uniform sampling over many templates recovers naive sequential composition. A temporal extension with staleness tolerance $\tau$ and Poisson update rate $\lambda$ couples budget consumption with data freshness. I additionally derive a predictive online allocator that targets the offline-optimal $\eps_q^* = B/u_k$ from the model's runtime estimate of $u_k$, trading a $5$--$17\%$ MAE reduction for an explicit $12$--$31\%$ query-rejection rate when the budget is exhausted. The model is empirically validated on a $4{,}155$-trial campaign covering Zipf-parameterized workloads ($\alpha \in \{0,\ldots,10\}$), six workload families (W1--W4 plus two TPC-H parametric variants), four per-query privacy parameters ($\eps_q \in \{0.1, 0.5, 1.0, 2.0\}$), and TPC-H scale factors SF=1 and SF=10 (60M lineitem rows). The model's predictions match empirical means within $<3\%$ in 21 of 24 main-grid cells and within $0.034$ units across the SF=1/SF=10 cross-scale test. Three leakage experiments---single-query MIA, differencing-style reconstruction on a five-level drill-down, and shadow-model MIA across W1--W4---track tight theoretical bounds and expose slack in the cumulative-budget bound. The middleware is a unit-tested prototype layered over PostgreSQL/DuckDB; exact-repeat caching is treated as a corollary of the model's $\alpha\to\infty$ limit rather than as a contribution.
 \end{abstract}
 
 \maketitle
@@ -76,10 +76,10 @@ The contributions are:
 \begin{enumerate}
     \item A statistical model (Section~\ref{sec:model}) that, given a workload distribution $\{p_i\}$ over query templates and a workload length $k$, yields closed-form predictions for the expected unique-query count $\E[u_k]$, the workload-aware budget consumption $\E[\eps_{\mathrm{wa}}(k)]$, and the budget savings ratio $S(k)$. Five propositions cover (i) $\E[u_k]$, (ii) budget savings, (iii) the Zipf-parameterized case, (iv) concentration via McDiarmid's inequality, and (v) per-query utility under a fixed total budget.
     \item A temporal extension (Section~\ref{sec:temporal}) that introduces a staleness tolerance $\tau$ and a Poisson update rate $\lambda$, producing $\E[\eps_{\mathrm{temp}}(T)]$ over a time horizon $T$. The static regime, the bounded-staleness regime, and the update-driven regime are continuous slidings of the same expression.
-    \item A middleware (Section~\ref{sec:system}) that instantiates the model. The system is implemented in Python on top of DuckDB (with an alternative PostgreSQL backend), supports a single-table aggregate SQL subset, exposes four execution modes (exact, naive DP, workload-aware DP, temporal DP), and ships with 62 unit tests.
-    \item A predictive online budget allocator (Section~\ref{sec:predictive}) that uses the model's $\E[u_k]$ estimate to choose $\eps_q$ at runtime, targeting the offline optimum $\eps_q^* = B / u_k$. It reduces per-query MAE by 4--17\% versus naive composition under the same total budget, at the explicit cost of rejecting $12$--$31\%$ of late queries once the budget is exhausted.
+    \item A middleware (Section~\ref{sec:system}) that instantiates the model. The system is implemented in Python on top of DuckDB (with an alternative PostgreSQL backend), supports a single-table aggregate SQL subset, and exposes four execution modes (exact, naive DP, workload-aware DP, temporal DP).
+    \item A predictive online budget allocator (Section~\ref{sec:predictive}) that uses the model's $\E[u_k]$ estimate to choose $\eps_q$ at runtime, targeting the offline optimum $\eps_q^* = B / u_k$. It reduces per-query MAE by 5--17\% versus naive composition under the same total budget, at the explicit cost of rejecting $12$--$31\%$ of late queries once the budget is exhausted.
     \item Empirical validation (Section~\ref{sec:eval}) on Zipf-parameterized workloads at TPC-H scale factor SF=1 (and a cross-scale check at SF=10 with 60M lineitem rows) plus the UCI Adult dataset. The full experimental campaign comprises six sweeps totaling $4{,}155$ trials. On the main grid ($6\times 4 = 24$ $(\alpha, k)$ cells, 30 trials each), the model's prediction of $\E[u_k]$ matches the empirical mean within $<3\%$ in 21 of 24 cells.
-    \item A leakage analysis (Section~\ref{sec:leakage}) that quantifies membership-inference AUC and differencing-attack reconstruction error as a function of $\eps$, against the theoretical bounds $e^{\eps}/(1+e^{\eps})$ and $2/\eps$ respectively.
+    \item A leakage analysis (Section~\ref{sec:leakage}) that quantifies membership-inference AUC and differencing-attack reconstruction error as a function of $\eps$, against the theoretical references $e^{\eps}/(1+e^{\eps})$ (an upper bound on attacker accuracy) and $1.5/\eps$ (the expected absolute pair-difference) respectively.
 \end{enumerate}
 
 \paragraph{Research question (reframed).}
@@ -98,7 +98,7 @@ $\eps$-differential privacy~\cite{dwork2006calibrating,dwork2014algorithmic} bou
 Denning~\cite{denning1979tracker} characterized the tracker attack class. Dinur and Nissim~\cite{dinur2003revealing} proved the \emph{Fundamental Law of Information Recovery}: too many noisy aggregate answers reconstruct the database. NIST SP 800-226~\cite{nist2025sp800226} compiles current guidance for evaluating DP guarantees in practice.
 
 \paragraph{Private SQL systems.}
-PINQ~\cite{mcsherry2009privacy} introduced privacy tracking in a LINQ-style language. Johnson et al.~\cite{johnson2018towards} and PrivateSQL~\cite{kotsogiannis2019privatesql} expanded the supported SQL subset; DOP-SQL~\cite{yu2024dopsql} integrates such mechanisms into PostgreSQL. Chorus~\cite{johnson2020chorus} rewrites queries to inject DP at the optimizer layer.
+PINQ~\cite{mcsherry2009privacy} introduced privacy tracking in a LINQ-style language. Johnson et al.~\cite{johnson2018towards} and PrivateSQL~\cite{kotsogiannis2019privatesql} expanded the supported SQL subset; DOP-SQL~\cite{yu2024dopsql} integrates such mechanisms into PostgreSQL. Chorus~\cite{johnson2020chorus} rewrites queries to inject DP before execution, keeping the host DBMS unmodified.
 
 \paragraph{Multi-query privacy accounting.}
 Dong, Sun, and Yi~\cite{dong2023better} showed that multiple relational queries can sometimes be answered with tighter error than naive composition suggests. This work shares the same motivation. The difference: \cite{dong2023better} exploits relational structure within a join-heavy workload, whereas the present report exploits \emph{template repetition} within a single-table aggregate workload, which is empirically the more common dashboard / drill-down setting.
@@ -107,13 +107,13 @@ Dong, Sun, and Yi~\cite{dong2023better} showed that multiple relational queries 
 A second line of work optimizes noise placement \emph{across} a fixed linear-query workload rather than across SQL templates. The Matrix Mechanism~\cite{li2010mm} chooses a strategy matrix that minimizes total error for a linear-query workload; HDMM~\cite{mckenna2018hdmm} scales this to high-dimensional predicate workloads via implicit workload representations. These methods are workload-aware in the sense of joint noise optimization, but they target static range / counting queries and do not model template repetition or adapt $\eps_q$ at runtime. PrivateSQL's view selection over a representative workload~\cite{kotsogiannis2019privatesql} is conceptually closer to template tracking but still makes an offline allocation decision.
 
 \paragraph{Online and adaptive DP.}
-Roth and Roughgarden's median mechanism~\cite{rothroughgarden2010median} and Hardt--Rothblum's Private Multiplicative Weights~\cite{hardtrothblum2010pmw} answer adaptively chosen predicate / counting queries via online learning, exploiting query correlations to answer exponentially more queries than naive Laplace. MWEM~\cite{hardtligett2012mwem} extends this to synthetic-data release via Multiplicative Weights + Exponential Mechanism. APEx~\cite{ge2019apex} reverses the analyst's interface from $\eps$ to an accuracy bound and picks the mechanism that meets it at minimum privacy loss. Pythia~\cite{kotsogiannis2017pythia} uses public-data features to select the best DP algorithm for a new input. These systems are adaptive in different senses---query selection (MWEM, PMW), per-query cost translation (APEx), or algorithm selection (Pythia)---but none is driven by an analytical forecast of \emph{future} budget consumption derived from observed template frequencies, and none addresses temporal staleness.
+Roth and Roughgarden's median mechanism~\cite{rothroughgarden2010median} and Hardt--Rothblum's Private Multiplicative Weights~\cite{hardtrothblum2010pmw} answer adaptively chosen predicate / counting queries via online learning, exploiting query correlations to answer exponentially more queries than naive Laplace. MWEM~\cite{hardtligett2012mwem} extends this to synthetic-data release via Multiplicative Weights + Exponential Mechanism. APEx~\cite{ge2019apex} reverses the analyst's interface from $\eps$ to an accuracy bound and picks the mechanism that meets it at minimum privacy loss. Pythia~\cite{kotsogiannis2017pythia} privately extracts data-dependent features from the sensitive input (spending part of the budget) to select the best DP algorithm for a new task. These systems are adaptive in different senses---query selection (MWEM, PMW), per-query cost translation (APEx), or algorithm selection (Pythia)---but none is driven by an analytical forecast of \emph{future} budget consumption derived from observed template frequencies, and none addresses temporal staleness.
 
 \paragraph{Modern / production DP-SQL.}
 Tumult Analytics~\cite{berghel2022tumult} is a production-grade Python/Spark framework with multi-table sessions, private joins, and explicit adaptive composition; OpenDP and SmartNoise SQL~\cite{opendp2023} wrap existing databases for SQL/Pandas/Spark deployment. Wilson et al.'s DP-SQL with Bounded User Contribution~\cite{wilson2020bounded} introduces row-ownership and contribution-bounding operators in relational algebra, addressing user-level DP for production engines. These efforts emphasize deployment quality (accounting correctness, scalability, multi-backend coverage); they neither claim nor implement closed-form workload modelling, predictive online allocation, or temporal coupling.
 
 \paragraph{Recent adjacent systems (2021--2026).}
-Four recent systems sharpen the boundary of this work's contribution. \textbf{DProvDB}~\cite{niu2023dprovdb} introduces multi-analyst provenance tracking and budget partitioning, addressing \emph{who} spends budget rather than predicting \emph{how much} a workload will spend. \textbf{DP-SQLP}~\cite{kellaris2014dpsqlp} (and follow-ups on continual observation) targets streaming aggregate release at scale, which overlaps with our temporal axis (D) but treats releases as a per-event stream rather than a template-distribution model. \textbf{Qrlew}~\cite{sarus2024qrlew} is an open-source SQL-to-DP-SQL rewriter from Sarus Technologies; rich type and row-ownership tracking enable correct contribution bounding, but the rewriter does not maintain a closed-form workload model. \textbf{DPSQL+}~\cite{dpsqlplus2024} formalises a validator--accountant--backend architecture and evaluates join-heavy TPC-H workloads under a fixed global budget. Empirical-benchmark work like \textbf{DPBench}~\cite{hay2016dpbench} reminds us that the relative ranking of DP algorithms is highly dataset- and scale-dependent---which is why we keep validation (G) as a separate axis. None of these adjacent systems combines a closed-form repeated-workload model, a predictive online allocator, temporal staleness coupling, and an AI/AST-based semantic cache in the same middleware.
+Four recent systems sharpen the boundary of this work's contribution. \textbf{DProvDB}~\cite{niu2023dprovdb} introduces multi-analyst provenance tracking and budget partitioning, addressing \emph{who} spends budget rather than predicting \emph{how much} a workload will spend. \textbf{DP-SQLP}~\cite{kellaris2014dpsqlp}, building on the continual-observation line~\cite{dwork2010continual}, targets streaming aggregate release at scale, which overlaps with our temporal axis (D) but treats releases as a per-event stream rather than a template-distribution model. \textbf{Qrlew}~\cite{sarus2024qrlew} is an open-source SQL-to-DP-SQL rewriter from Sarus Technologies; rich type and row-ownership tracking enable correct contribution bounding, but the rewriter does not maintain a closed-form workload model. \textbf{DPSQL+}~\cite{dpsqlplus2024} formalises a validator--accountant--backend architecture with a minimum-frequency rule and evaluates TPC-H workloads under a fixed global budget. Most directly related to the caching mechanism here are two systems that reuse prior noisy results to conserve budget: \textbf{Turbo}~\cite{kostopoulou2023turbo} caches DP answers for linear-query workloads (returning a repeated query for free on the same database version, and amortizing across related queries via PMW), and \textbf{CacheDP}~\cite{mazmudar2023cachedp} maintains an accuracy-aware DP cache that answers later queries with reduced budget. These confirm that budget-saving DP caching is established prior art---which is precisely why this report treats caching as a mechanism, not a contribution; what neither provides is a closed-form model that \emph{predicts} budget consumption from a template-frequency distribution (axes A--B). Empirical-benchmark work like \textbf{DPBench}~\cite{hay2016dpbench} reminds us that the relative ranking of DP algorithms is highly dataset- and scale-dependent---which is why we keep validation (G) as a separate axis. No prior system combines a closed-form repeated-workload \emph{forecast}, a predictive online allocator, temporal staleness coupling, and an AI/AST-based semantic cache in the same middleware.
 
 \paragraph{Tree kernels and code embeddings.}
 The semantic L2 cache layer I explore in §\ref{sec:semantic} builds on two lines of work. Collins and Duffy~\cite{collins2001convolution} introduced the tree convolution kernel that counts shared subtrees between two parse trees; subsequent work by Moschitti~\cite{moschitti2006trees} and others applied it to relation extraction and question answering. For neural representations, Feng et al.~\cite{feng2020codebert} pre-trained CodeBERT on source-code tokens and Guo et al.~\cite{guo2021graphcodebert} extended this with data-flow graphs in GraphCodeBERT. I do not propose a new code-representation method; I use these tools to detect alpha-equivalent SQL queries that exact-hash matching misses, and I measure the resulting privacy/utility tradeoff.
@@ -172,7 +172,7 @@ APEx \cite{ge2019apex}
   & single-table exploration (WCQ/ICQ/TCQ)
   & no & Adult + NYTaxi + entity resolution \\
 Pythia \cite{kotsogiannis2017pythia}
-  & feature-based selector & no (algorithm, not budget) & partial (dynamic realloc.) & no
+  & feature-based selector & no (algorithm, not budget) & no (selection-time) & no
   & histograms, 1D/2D range, NB
   & no & 6{,}294 inputs across datasets \\
 Better-Composition \cite{dong2023better}
@@ -237,10 +237,10 @@ GraphCodeBERT \cite{guo2021graphcodebert}
 \end{table*}
 
 \paragraph{Our differentiation.}
-The differentiation is best stated as a \emph{combination} argument, not as ``beating'' any single prior system. The literature breaks into five lines that have remained separate: (i) practical SQL/DBMS DP engines (PINQ, FLEX, Chorus, Tumult, OpenDP/SmartNoise, Wilson et al., Qrlew, DProvDB, DPSQL+); (ii) workload-aware release mechanisms (Matrix Mechanism, HDMM); (iii) online / adaptive query answering (MWEM, PMW, median mechanism, APEx, Pythia); (iv) relational sensitivity for joins and conjunctive queries (Residual Sensitivity, R2T, Better than Composition); and (v) code / AST representation learning (tree kernels, CodeBERT, GraphCodeBERT). Each line is strong inside its own remit, but the surveyed evidence shows that the \emph{intersection}---a single DP-SQL middleware that (a) models template repetition skew with a closed-form prediction, (b) forecasts future budget consumption online, (c) couples budget to data freshness, and (d) tests semantic similarity as a privacy-aware cache key---is empty. The strongest defensible claim is therefore not ``we beat APEx / Tumult / HDMM,'' but ``these five lines have not combined; we combine them and report the result---including where the combination fails (the honest negative of §\ref{sec:semantic}).''
+The differentiation is best stated as a \emph{combination} argument, not as ``beating'' any single prior system. The literature breaks into five lines that have remained separate: (i) practical SQL/DBMS DP engines, including those that cache noisy results to conserve budget (PINQ, FLEX, Chorus, Tumult, OpenDP/SmartNoise, Wilson et al., Qrlew, DProvDB, DPSQL+, Turbo, CacheDP); (ii) workload-aware release mechanisms (Matrix Mechanism, HDMM); (iii) online / adaptive query answering (MWEM, PMW, median mechanism, APEx, Pythia); (iv) relational sensitivity for joins and conjunctive queries (Residual Sensitivity, R2T, Better than Composition); and (v) code / AST representation learning (tree kernels, CodeBERT, GraphCodeBERT). Each line is strong inside its own remit, but the surveyed evidence shows that the \emph{intersection}---a single DP-SQL middleware that (a) models template repetition skew with a closed-form prediction, (b) forecasts future budget consumption online, (c) couples budget to data freshness, and (d) tests semantic similarity as a privacy-aware cache key---is empty. The strongest defensible claim is therefore not ``we beat APEx / Tumult / HDMM,'' but ``these five lines have not combined; we combine them and report the result---including where the combination fails (the honest negative of §\ref{sec:semantic}).''
 
 \paragraph{Anticipated objections.}
-A reviewer may ask whether this work is a variant of APEx~\cite{ge2019apex} or Pythia~\cite{kotsogiannis2017pythia}: it is not, because both pick mechanisms / parameters for the \emph{current} query, while we forecast \emph{future} budget consumption from an analytical model. A second objection may be that workload-aware DP is already covered by Matrix Mechanism~\cite{li2010mm} or HDMM~\cite{mckenna2018hdmm}: their notion of ``workload'' is a linear-query correlation matrix, not a distribution over SQL templates with repetition skew, and their allocation is static. A third objection may be that this is a production-engineering paper like Tumult Analytics~\cite{berghel2022tumult}: it is not---our system stays at $\sim$1.4 KLOC and a single-table aggregate scope; the contribution is the model layer that any of those production systems could in principle adopt.
+A reviewer may ask whether this work is a variant of APEx~\cite{ge2019apex} or Pythia~\cite{kotsogiannis2017pythia}: it is not, because both pick mechanisms / parameters for the \emph{current} query, while we forecast \emph{future} budget consumption from an analytical model. A second objection may be that workload-aware DP is already covered by Matrix Mechanism~\cite{li2010mm} or HDMM~\cite{mckenna2018hdmm}: their notion of ``workload'' is a linear-query correlation matrix, not a distribution over SQL templates with repetition skew, and their allocation is static. A third objection may be that this is a production-engineering paper like Tumult Analytics~\cite{berghel2022tumult}: it is not---our system stays at a deliberately small, single-table aggregate scope; the contribution is the model layer that any of those production systems could in principle adopt.
 
 %% ============================================================
 \section{Threat Model and Preliminaries}
@@ -320,6 +320,9 @@ For fixed finite $m$ and growing $k$, every template eventually appears, so the 
 \label{prop:zipf}
 Let $p_i \propto i^{-\alpha}/H_{m,\alpha}$ with generalized harmonic number $H_{m,\alpha} = \sum_{i=1}^m i^{-\alpha}$. The savings ratio $S(k)$ is monotone non-decreasing in $\alpha$ for fixed $(k,m)$. As $\alpha \to 0$ it approaches Limit~B; as $\alpha \to \infty$ it approaches Limit~A.
 \end{prop}
+\begin{proof}
+Write $S(k)=1-\E[u_k]/k$ with $\E[u_k]=\sum_{i=1}^m \phi(p_i)$ and $\phi(x)=1-(1-x)^k$. Since $\phi''(x)=-k(k-1)(1-x)^{k-2}\le 0$ on $[0,1]$, $\phi$ is concave, so the symmetric sum $\E[u_k]$ is Schur-concave. The Zipf weights become more majorized as $\alpha$ grows (a larger $\alpha$ shifts probability mass onto the top-ranked templates); hence for $\alpha_2>\alpha_1$ the vector $\{p_i(\alpha_2)\}$ majorizes $\{p_i(\alpha_1)\}$, and Schur-concavity gives $\E[u_k](\alpha_2)\le\E[u_k](\alpha_1)$, i.e.\ $S(\alpha_2)\ge S(\alpha_1)$. The endpoints follow from $\alpha\to 0$ (uniform weights, Limit~B) and $\alpha\to\infty$ (point mass on $i=1$, Limit~A). A numerical scan over $m\in\{3,\dots,100\}$, $k\in\{2,\dots,200\}$ found no violation.
+\end{proof}
 
 \begin{prop}[Concentration of $u_k$]
 \label{prop:concentration}
@@ -344,7 +347,7 @@ so the predicted error ratio between the two strategies is
 \end{equation}
 \end{prop}
 
-\noindent At Zipf $\alpha=1$, $m=10$, $k=100$ the model predicts $\E[u_k]\approx 9.6$, so the workload-aware system answers the same workload with roughly $10\times$ lower per-query error at the same total budget.
+\noindent At Zipf $\alpha=1$, $m=10$, $k=100$ the model predicts $\E[u_k]\approx 9.9$, so the workload-aware system answers the same workload with roughly $10\times$ lower per-query error at the same total budget.
 
 \paragraph{Caveat: variance, not just mean.}
 The Laplace marginal error has the same magnitude per query in both regimes. The difference is in the \emph{joint} distribution: averaging $k$ independent noisy answers reduces variance by a factor of $k$, but averaging the same cached answer $k$ times does not. Workload-aware accounting trades budget savings for the loss of independent noise draws.
@@ -371,14 +374,14 @@ and the expected total workload-aware budget over the horizon is
 where $k_{\mathrm{tot}}$ is the total number of queries issued in $T$.
 \end{prop}
 
-\paragraph{Three regimes.} (a) \emph{Static snapshot}: $\tau \to \infty$, $\lambda=0$, $N \to 1$, recovers Section~\ref{sec:model}. (b) \emph{Bounded staleness}: $\tau$ finite, $\lambda = 0$, $N = \lceil T/\tau \rceil$. (c) \emph{Update-driven}: $\lambda>0$, $N$ grows linearly in $T$. The middleware implements all three through the same execution mode (\texttt{TEMPORAL\_DP}) parameterized by $\tau$ and $\lambda$.
+\paragraph{Three regimes.} (a) \emph{Static snapshot}: $\tau \to \infty$, $\lambda=0$, $N \to 1$, recovers Section~\ref{sec:model}. (b) \emph{Bounded staleness}: $\tau$ finite, $\lambda = 0$, $N = \lceil T/\tau \rceil$. (c) \emph{Update-driven}: $\lambda>0$, $N$ grows linearly in $T$. The middleware implements all three through a single temporal mode parameterized by $\tau$ and $\lambda$.
 
 %% ============================================================
 \section{System Implementation}
 \label{sec:system}
 
 \paragraph{Architecture.}
-The middleware is a Python proxy between the analyst and a backend database (DuckDB by default, with an alternative PostgreSQL adapter; both expose an identical interface). Algorithm~\ref{alg:full} gives the full processing pipeline.
+The middleware is a thin proxy between the analyst and a backend database (DuckDB by default, with an alternative PostgreSQL adapter behind an identical interface). Algorithm~\ref{alg:full} gives the full processing pipeline.
 
 \begin{algorithm}[h]
 \caption{Workload-Aware DP Middleware with Temporal Regime}
@@ -415,14 +418,14 @@ The middleware is a Python proxy between the analyst and a backend database (Duc
 
 \paragraph{Components.}
 \begin{itemize}
-    \item Parser/validator (sqlglot-based) over the supported SQL subset; rejects joins, subqueries, non-aggregate SELECT.
+    \item Parser/validator over the supported SQL subset; rejects joins, subqueries, non-aggregate SELECT, HAVING, and DISTINCT aggregates.
     \item Sensitivity analyzer using configurable per-column clipping bounds.
     \item Laplace mechanism with parallel composition for GROUP BY; multi-aggregate queries split the budget by sequential composition across aggregates.
     \item Budget ledger with two-level (template $\to$ parameter) cache, staleness timestamps, and update simulation.
-    \item Four execution modes: \texttt{EXACT}, \texttt{NAIVE\_DP}, \texttt{WORKLOAD\_DP}, \texttt{TEMPORAL\_DP}.
+    \item Four execution modes: exact, naive-DP, workload-aware-DP, and temporal-DP.
 \end{itemize}
 
-\paragraph{Test suite.} 62 unit tests cover parser validation, sensitivity computation, Laplace calibration, cache exact-match semantics, template normalization, model limits, McDiarmid bound, temporal re-noising, and the analytical limits at $\alpha \in \{0,\infty\}$.
+\paragraph{Validation.} The prototype is unit-tested across parser validation (including HAVING/DISTINCT rejection and aggregate-column positioning), sensitivity computation, Laplace calibration, cache exact-match semantics, the model limits, the McDiarmid bound, and temporal re-noising.
 
 \paragraph{Data.} TPC-H scale factor SF=1 (6{,}001{,}215 lineitem rows, 1.5M orders) is generated via DuckDB's official TPC-H extension. UCI Adult (48{,}842 rows) is loaded as a standard DP-literature benchmark.
 
@@ -441,10 +444,10 @@ The middleware is a Python proxy between the analyst and a backend database (Duc
     \item \textbf{Full benchmark grid} (2{,}160 trials): 6 workloads $\times$ 4 epsilons $\times$ 3 modes $\times$ 30 trials.
 \end{enumerate}
 
-\paragraph{Model vs empirical $\E[u_k]$.} Table~\ref{tab:validation} compares the model prediction to the empirical mean across the main grid. The model agrees with the empirical mean within $<3\%$ in \textbf{21 of 24 cells}; the three outliers ($\alpha\in\{1.5,2.0,3.0\}$ at small $k$) reach $3.5\%$, $5.7\%$, and $8.6\%$ — attributable to finite-sample variance at high skew where $\E[u_k]$ is small (so any 0.1-unit absolute deviation becomes a noticeable relative error).
+\paragraph{Model vs empirical $\E[u_k]$.} Table~\ref{tab:validation} compares the model prediction to the empirical mean across the main grid. The model agrees with the empirical mean within $<3\%$ in \textbf{21 of 24 cells}; the three outliers ($\alpha\in\{2.0,3.0\}$ at small $k$: $(2.0,10)$, $(3.0,10)$, $(3.0,25)$) reach $3.5\%$, $5.7\%$, and $8.6\%$ — attributable to finite-sample variance at high skew where $\E[u_k]$ is small (so any 0.1-unit absolute deviation becomes a noticeable relative error).
 
 \begin{table*}[t]
-\caption{Model prediction vs empirical $u_k$ for Zipf workloads ($m=7$, 30 trials per cell). Numbers within parentheses are relative error in percent.}
+\caption{Model prediction vs empirical $u_k$ for Zipf workloads ($m=7$, 30 trials per cell). Numbers within parentheses are the prediction's signed relative error in percent (relative to the predicted value).}
 \label{tab:validation}
 \centering
 \small
@@ -504,7 +507,7 @@ The $\alpha=10$ row is the Limit A regime: when one template dominates, only $\a
 
 \paragraph{Epsilon sweep.} The model's $\E[u_k]$ is structurally independent of $\eps_q$. Empirical validation across $\eps_q \in \{0.1, 0.5, 1.0, 2.0\}$ and $k\in\{25,50,100,250\}$ confirms this within $0.12$ unit absolute error across every cell, and within $0.005$ unit at $k=250$ (every $\eps_q$ row collapses to the same empirical mean).
 
-\paragraph{Cross-scale validation (SF=1 vs SF=10).} The model is also dataset-independent: running the same template workload over a 10$\times$ larger TPC-H database (60M lineitem rows) yields identical empirical $\E[u_k]$ to within 0.03 units. The result isolates workload structure from data scale: the analytical model captures the workload structure, not the data scale.
+\paragraph{Cross-scale validation (SF=1 vs SF=10).} The model is also dataset-independent: running the same template workload over a 10$\times$ larger TPC-H database (60M lineitem rows) yields identical empirical $\E[u_k]$ to within 0.034 units. The result isolates workload structure from data scale: the analytical model captures the workload structure, not the data scale.
 
 \paragraph{Full grid (6 workloads $\times$ 4 epsilons $\times$ 3 modes).} The most operationally relevant numbers are:
 
@@ -555,7 +558,7 @@ W4 is the negative case: when queries are genuinely unique, no execution mode sa
 \begin{figure}[h]
 \centering
 \includegraphics[width=\columnwidth]{sf10/sf10_validation.png}
-\caption{Cross-scale validation: same model, two TPC-H scales (SF=1 with 6M and SF=10 with 60M lineitem rows). Empirical means coincide within $0.03$ units.}
+\caption{Cross-scale validation: same model, two TPC-H scales (SF=1 with 6M and SF=10 with 60M lineitem rows). Empirical means coincide within $0.034$ units.}
 \label{fig:sf10}
 \end{figure}
 
@@ -710,7 +713,7 @@ $\eps$ & MIA AUC (emp.) & MIA acc. (emp.) & $e^\eps/(1+e^\eps)$ (theory) \\
 \end{tabular}
 \end{center}
 
-Empirical AUC tracks the theoretical bound $e^\eps/(1+e^\eps)$ within $\leq 1\%$. At $\eps\leq 0.1$ the attack is no better than chance.
+Empirical AUC stays below and tracks the DP upper bound $e^\eps/(1+e^\eps)$ within $\leq 1\%$; this expression upper-bounds the optimal attacker's accuracy (the exact single-release optimum is $1-\tfrac12 e^{-\eps/2}$, which the empirical accuracy column matches). At $\eps\leq 0.1$ the attack is no better than chance.
 
 \paragraph{Reconstruction.} I replay the milestone's HIV-style differencing attack on a 5-level drill-down whose true counts are $(48842, 33049, 365, 99, 89)$. The adversary recovers the per-level differences from noisy releases.
 
@@ -718,17 +721,17 @@ Empirical AUC tracks the theoretical bound $e^\eps/(1+e^\eps)$ within $\leq 1\%$
 \small
 \begin{tabular}{c|ccc}
 \toprule
-$\eps$ & Mean abs.\ err & p95 & Theory $\sqrt{2}\cdot\sqrt{2}/\eps$ \\
+$\eps$ & Mean abs.\ err & p95 & Theory $1.5/\eps$ \\
 \midrule
-0.01 & 148.2 & 404.4 & 200.0 \\
-0.10 & 14.8 & 40.4 & 20.0 \\
-1.00 & 1.5 & 4.0 & 2.0 \\
-5.00 & 0.3 & 0.8 & 0.4 \\
+0.01 & 148.2 & 404.4 & 150.0 \\
+0.10 & 14.8 & 40.4 & 15.0 \\
+1.00 & 1.5 & 4.0 & 1.5 \\
+5.00 & 0.3 & 0.8 & 0.3 \\
 \bottomrule
 \end{tabular}
 \end{center}
 
-Errors scale as $\sqrt{2}/\eps$ per pair-difference, as expected from the standard deviation of the difference of two Laplace variables.
+Mean absolute errors scale as $3/(2\eps)=1.5/\eps$, the expected absolute value of the difference of two independent $\Lap(1/\eps)$ variables (its standard deviation is the larger $2/\eps$). The empirical mean tracks the $1.5/\eps$ reference to within a few percent across three orders of magnitude in $\eps$.
 
 \begin{figure}[h]
 \centering
@@ -740,7 +743,7 @@ Errors scale as $\sqrt{2}/\eps$ per pair-difference, as expected from the standa
 \begin{figure}[h]
 \centering
 \includegraphics[width=\columnwidth]{leakage/reconstruction_vs_eps.png}
-\caption{Per-pair-difference reconstruction error on the five-level drill-down, against the theoretical $\sqrt{2}/\eps$ scaling derived from the difference of two Laplace variables. Empirical mean and $p95$ both follow the predicted slope across three orders of magnitude in $\eps$.}
+\caption{Per-pair-difference reconstruction error on the five-level drill-down, against the theoretical $1.5/\eps$ scaling (the expected absolute difference of two independent $\Lap(1/\eps)$ variables). Empirical mean and $p95$ both follow the predicted slope across three orders of magnitude in $\eps$.}
 \label{fig:reconstruction}
 \end{figure}
 
@@ -758,7 +761,7 @@ The single-query MIA above is conservative: in practice, an attacker sees a \emp
 
 \textbf{Setup.} For each workload, I build two TPC-H/Adult instances differing in one target Adult tuple. Each instance produces an i.i.d.\ noisy output sequence under the middleware. I collect 30 shadow runs per world (60 sequences total), train a logistic-regression classifier on 70\% of them, and measure AUC on the holdout 30\%.
 
-\textbf{Result.} Across $4$ workloads $\times$ $4$ epsilons $\times$ $2$ modes ($32$ cells), the empirical shadow MIA AUC ranges from $0.14$ to $0.58$---substantially below the theoretical \emph{cumulative} bound $e^{\sum \eps_q}/(1+e^{\sum \eps_q})$ (which approaches $1.0$ once total consumption exceeds $\sim 5$).
+\textbf{Result.} Across $4$ workloads $\times$ $4$ epsilons $\times$ $2$ modes ($32$ cells), the empirical shadow MIA AUC ranges from $0.14$ to $0.58$. The meaningful reference is the random-guess line $0.5$: most cells sit at or below it, and even the strongest (W1 repetitive, $\eps_q=2$) reaches only $0.58$. The \emph{cumulative} bound $e^{\sum \eps_q}/(1+e^{\sum \eps_q})$ saturates at $\approx 1.0$ once total consumption exceeds $\sim 5$, so comparing against it is vacuous; the informative comparison is the per-query bound $e^{\eps_q}/(1+e^{\eps_q})$, which the empirical AUC also stays under. \emph{Caveat:} with $60$ sequences per cell and an $18$-sequence holdout, cells reporting AUC $<0.5$ reflect small-sample estimator variance (an anti-correlated classifier on a tiny test set), not sub-chance leakage---the honest reading is that workload-level leakage is \emph{weak}, not that it is below chance.
 
 \textbf{Why the gap?} Most queries in W1--W3 do not directly probe the target row; they are diluted across the $k=50$-query workload. The classifier learns to identify the few informative queries, but the signal-to-noise ratio is governed by the per-query $\eps_q$, not the cumulative budget. This empirical finding is consistent with prior work on amplification by sub-sampling and demonstrates that \emph{cumulative-budget bounds are loose for realistic workload MIA}.
 
@@ -771,14 +774,35 @@ The single-query MIA above is conservative: in practice, an attacker sees a \emp
 The analytical model of §\ref{sec:model} is descriptive: given a workload distribution, it predicts how much budget will be consumed. In this section I close the loop and use the same model \emph{prescriptively}, as the backbone of a new execution mode that adapts the per-query privacy parameter $\eps_q$ online instead of fixing it offline.
 
 \paragraph{Mechanism.}
-At each incoming query, the allocator maintains an empirical frequency distribution over observed template hashes (Laplace-smoothed). After a small warmup phase (3--10\% of the workload, used to seed the prior), it estimates the workload's total unique-template count as $\hat U = $ \texttt{expected\_unique\_queries}$(\hat p, k_{\mathrm{total}})$ from Proposition~\ref{prop:eu}, and allocates
+At each incoming query, the allocator maintains an empirical frequency distribution over observed template hashes (Laplace-smoothed). After a small warmup phase (3--10\% of the workload, used to seed the prior), it estimates the workload's total unique-template count as $\hat U = \E[u_{k_{\mathrm{total}}}]$ under $\hat p$ from Proposition~\ref{prop:eu}, and allocates
 \[
 \eps_q^{\,\mathrm{pred}} \;=\; \frac{B}{\max(\hat U, 1)},
 \]
 where $B$ is the total privacy budget. The allocator caps the per-query value to the remaining budget so total spend never exceeds $B$ by construction.
 
+Algorithm~\ref{alg:predictive} makes this decision explicit. Unlike Algorithm~\ref{alg:full}, whose per-query budget is a fixed input, here $\eps_q$ is a \emph{runtime function} of the forecasted unique-template count $\hat U$: the non-trivial logic is the online re-estimation of $\hat U$ from the empirical template distribution and the resulting $B/\hat U$ allocation.
+
+\begin{algorithm}[h]
+\caption{Predictive per-query budget allocation}
+\label{alg:predictive}
+\begin{algorithmic}[1]
+\REQUIRE Query $q$, total budget $B$, declared length $k_{\mathrm{tot}}$, warmup size $w$, floor $\eps_0$, consumed $c$
+\ENSURE Per-query budget $\eps_q$ (0 = serve from cache or reject)
+\STATE Append $q$'s template hash to history; update the unique-template set
+\IF{$B - c \leq \eps_0$}
+    \STATE \textbf{return} $0$ \hfill {\small (budget exhausted; exact-repeat cache hits still served free)}
+\ENDIF
+\IF{queries seen $\leq w$}
+    \STATE \textbf{return} $\max\!\big(\eps_0,\ \min(B/k_{\mathrm{tot}},\ B-c)\big)$ \hfill {\small (warmup: per-slot average under a flat prior)}
+\ENDIF
+\STATE $\hat p \gets$ Laplace-smoothed empirical template frequencies from history
+\STATE $\hat U \gets \E[u_{k_{\mathrm{tot}}}]$ under $\hat p$ \hfill {\small (Proposition~\ref{prop:eu})}
+\STATE \textbf{return} $\max\!\big(\eps_0,\ \min(B/\max(\hat U,1),\ B-c)\big)$ \hfill {\small (offline-optimal target $\eps_q^*=B/u_k$)}
+\end{algorithmic}
+\end{algorithm}
+
 \paragraph{Why this is novel.}
-PINQ~\cite{mcsherry2009privacy}, PrivateSQL~\cite{kotsogiannis2019privatesql}, Chorus~\cite{johnson2020chorus}, and DOP-SQL~\cite{yu2024dopsql} all expose a fixed per-query $\eps_q$ that the analyst chooses up front. None of them adapt $\eps_q$ at runtime from observed workload structure. Among the surveyed systems, the predictive allocator is the only DP-SQL mechanism that uses an analytical workload model as a runtime budget-allocation policy. Its mathematical justification rests directly on Proposition~\ref{prop:savings}: the optimal offline allocation is $\eps_q^* = B/u_k$, and the predictive allocator approximates $u_k$ online.
+PINQ~\cite{mcsherry2009privacy}, PrivateSQL~\cite{kotsogiannis2019privatesql}, Chorus~\cite{johnson2020chorus}, and DOP-SQL~\cite{yu2024dopsql} all expose a fixed per-query $\eps_q$ that the analyst chooses up front. None of them set $\eps_q$ from a forecast of \emph{future workload-aggregate} consumption. Two systems do adapt budget in adjacent senses: APEx~\cite{ge2019apex} translates a per-query accuracy bound into the minimum-privacy $\eps$ for the \emph{current} query at runtime, and PrivateSQL~\cite{kotsogiannis2019privatesql} allocates budget across views \emph{offline} over a representative workload. The distinction here is that the predictive allocator chooses $\eps_q$ from an analytical forecast of future unique-template consumption (Proposition~\ref{prop:eu}), rather than from the current query's accuracy target or a static per-view split. Its mathematical justification rests directly on Proposition~\ref{prop:savings}: the optimal offline allocation is $\eps_q^* = B/u_k$, and the predictive allocator approximates $u_k$ online.
 
 \paragraph{Empirical comparison.}
 Table~\ref{tab:predictive} compares three strategies on Zipf workloads ($k=100$, $B=10$, 30 trials per cell). Naive divides $B$ evenly across $k$ queries ($\eps_q=0.1$). Workload-aware uses the same fixed $\eps_q=0.1$ but only charges cache misses---it answers all 100 queries but never spends more than $\sim 0.7\eps$ of the budget. Predictive uses the model to choose $\eps_q$ on the fly.
@@ -808,10 +832,10 @@ $\alpha$ & Mode & $\eps$ spent & MAE & Queries answered & $\eps_q$ per release \
 \end{table*}
 
 \paragraph{Interpretation.}
-The predictive allocator delivers a modest MAE reduction (4--17\% lower than naive) at the cost of denying some queries when the budget runs out. The trade-off surface is visible: $\eps_q$ per release jumps from $0.1$ to $\approx 1.43 = B/m$, matching the theoretical optimum that the model derives from the predicted $\hat U \approx m$. Cache hits inherit whichever noisy answer was released at the time, so the cache becomes "locked in" to the early-release quality. To realize the full $B/U$ utility benefit, the mechanism must \emph{re-release} cached answers when the budget shows surplus---an extension I discuss in §\ref{sec:future-work}.
+The predictive allocator delivers a modest MAE reduction (5--17\% lower than naive: 16.8\% at $\alpha=0$ down to 5.4\% at $\alpha=2$) at the cost of denying some queries when the budget runs out. The trade-off surface is visible: $\eps_q$ per release jumps from $0.1$ to $\approx 1.43 = B/m$, matching the theoretical optimum that the model derives from the predicted $\hat U \approx m$. Cache hits inherit whichever noisy answer was released at the time, so the cache becomes "locked in" to the early-release quality. To realize the full $B/U$ utility benefit, the mechanism must \emph{re-release} cached answers when the budget shows surplus---an extension I discuss in §\ref{sec:future-work}.
 
 \paragraph{The gap across budget regimes.}
-The MAE improvement at $B=10$ is not a one-off. Sweeping the total budget over $B\in\{1,5,10,50\}$ at $\alpha=1$, $k=100$ (Table~\ref{tab:budget-sweep}) shows a uniform $18$--$32\%$ MAE reduction relative to naive across the full range. The gap is largest at $B=1$ (the tightest-budget regime, where every release matters); at $B=50$ the curves converge as the per-query noise becomes small.
+The MAE improvement at $B=10$ is not a one-off. Sweeping the total budget over $B\in\{1,5,10,50\}$ at $\alpha=1$, $k=100$ (Table~\ref{tab:budget-sweep}) shows MAE reductions of $32\%$ ($B{=}1$), $\sim$$0.5\%$ ($B{=}5$), $18\%$ ($B{=}10$), and $21\%$ ($B{=}50$) relative to naive. The reduction is non-uniform: it is largest in the tightest-budget regime ($B{=}1$, where every release matters) and is negligible at $B{=}5$ (consistent with the near-identical naive/predictive entries in Table~\ref{tab:budget-sweep}).
 
 \begin{table}[h]
 \caption{Predictive allocator vs baselines across budget regimes. 20 trials per cell.}
@@ -900,14 +924,14 @@ The current implementation collapses AVG to a single Laplace release with sensit
 
 \begin{enumerate}
     \item \textbf{Workload-aware budget consumption is a function of $\E[u_k]$, not the cache mechanism.} The closed form $\E[\eps_{\mathrm{wa}}] = \eps_q \cdot \E[u_k]$ holds with $<3\%$ relative error in 21 of 24 main-grid cells, holds \emph{exactly} on a constructed mixed W1+W4 workload (Table~\ref{tab:mixed}), and is invariant to TPC-H scale (SF=1 vs SF=10 agree within 0.03 units) and to $\eps_q$ (which cancels structurally). This means a deployment can estimate its privacy cost \emph{before} running any queries from the workload's template distribution alone.
-    \item \textbf{The toy $1-1/k$ rule is a corner case.} The milestone identified $1-1/k$ for perfect repetition; the model places this at Limit~A ($\alpha\to\infty$) and predicts the full interior between it and naive composition (Limit~B). At $\alpha=2$, $k=200$, $m=7$ the savings ratio is empirically $93\%$ and the model predicts $93\%$.
-    \item \textbf{The cumulative-$\eps$ bound is loose for realistic multi-query MIA.} Shadow-model MIA AUC across W1--W4 ranges from $0.15$ to $0.58$, well below the cumulative bound $e^{\sum\eps_i}/(1+e^{\sum\eps_i})\to 1.0$ that current accounting assumes. Practically: privacy budget is overspent if the threat model assumes worst-case observation.
+    \item \textbf{The toy $1-1/k$ rule is a corner case.} The milestone identified $1-1/k$ for perfect repetition; the model places this at Limit~A ($\alpha\to\infty$) and predicts the full interior between it and naive composition (Limit~B). At $\alpha=2$, $k=200$, $m=7$ the savings ratio is empirically $96.5\%$ ($\E[u_k]=6.93$, $S=1-6.93/200$) and the model predicts $96.5\%$ ($\E[u_k]=6.90$).
+    \item \textbf{The cumulative-$\eps$ bound is loose for realistic multi-query MIA.} Shadow-model MIA AUC across W1--W4 ranges from $0.14$ to $0.58$, well below the cumulative bound $e^{\sum\eps_i}/(1+e^{\sum\eps_i})\to 1.0$ that current accounting assumes. Practically: privacy budget is overspent if the threat model assumes worst-case observation.
     \item \textbf{Semantic similarity is not equivalence.} Tree-kernel + embedding matching admits dangerous false positives (queries with different true answers but similar ASTs) and misses textbook equivalences (commutative AND, integer comparators). The cache is correct only when paired with a symbolic equivalence prover; without one, "semantic DP cache" is not actually DP.
 \end{enumerate}
 
 \paragraph{Where the model wins, where it loses.} The model gives its largest savings on skewed workloads (W1, W2-parametric): savings reach $1-1/k$ in the repetitive limit and $\approx 1 - \E[u_k]/k$ in the Zipf-$\alpha{=}1$ regime, with predictions within $3\%$ of the empirical mean across 21 of 24 main-grid cells. The model also identifies failure regimes: on uniform workloads ($\alpha\to 0$) and drill-down sequences (W4), every query is structurally unique, the savings ratio collapses to zero, and the reconstruction attack succeeds at any practical $\eps$. The temporal extension makes the cost of freshness explicit: a dashboard with staleness tolerance $\tau{=}10$ over a horizon $T{=}100$ pays roughly an order of magnitude more budget than the static-snapshot case (the model gives an upper-bound prediction, exact magnitudes depend on the realized arrival sequence), recovering the milestone's exact-repeat assumption only at $\tau\to\infty$.
 
-Two assumptions remain to be relaxed. First, template sampling is i.i.d.; real workloads burst (dashboards refresh in short volleys, then sleep). Second, the temporal extension uses Poisson updates with a single invalidation probability~$q$; production systems have correlated invalidations. Both are tractable in the same closed-form framework and are listed in Section~\ref{sec:future-work}. With those caveats, the report contributes (i) a closed-form workload-budget model that recovers the milestone's $1-1/k$ rule as a corner case and predicts the full Zipf interior; (ii) a temporal extension that couples budget to data freshness; (iii) a predictive allocator that targets the analytical optimum $\eps_q^*=B/u_k$; and (iv) a leakage analysis that matches the theoretical MIA and reconstruction bounds in the tight regimes and exposes the slack in the cumulative-$\eps$ bound elsewhere. The middleware, 62 unit tests, the full $4{,}155$-trial experimental corpus, and the figures are reproducible from the repository.
+Two assumptions remain to be relaxed. First, template sampling is i.i.d.; real workloads burst (dashboards refresh in short volleys, then sleep). Second, the temporal extension uses Poisson updates with a single invalidation probability~$q$; production systems have correlated invalidations. Both are tractable in the same closed-form framework and are listed in Section~\ref{sec:future-work}. With those caveats, the report contributes (i) a closed-form workload-budget model that recovers the milestone's $1-1/k$ rule as a corner case and predicts the full Zipf interior; (ii) a temporal extension that couples budget to data freshness; (iii) a predictive allocator that targets the analytical optimum $\eps_q^*=B/u_k$; and (iv) a leakage analysis that matches the theoretical MIA and reconstruction bounds in the tight regimes and exposes the slack in the cumulative-$\eps$ bound elsewhere. The middleware, the full $4{,}155$-trial experimental corpus, and the figures are reproducible from the repository.
 
 %% ============================================================
 \begin{thebibliography}{20}
@@ -940,7 +964,7 @@ C. Dwork and A. Roth. 2014.
 \bibitem{flajolet1992birthday}
 P. Flajolet, D. Gardy, and L. Thimonier. 1992.
 \newblock Birthday Paradox, Coupon Collectors, Caching Algorithms and Self-Organizing Search.
-\newblock {\em Discrete Applied Mathematics} 39, 207--229.
+\newblock {\em Discrete Applied Mathematics} 39, 3, 207--229.
 
 \bibitem{johnson2018towards}
 N. Johnson, J. P. Near, and D. Song. 2018.
@@ -1050,27 +1074,27 @@ OpenDP Project and SmartNoise. 2023.
 \bibitem{wilson2020bounded}
 R. J. Wilson, C. Y. Zhang, W. Lam, D. Desfontaines, D. Simmons-Marengo, and B. Gipson. 2020.
 \newblock Differentially Private SQL with Bounded User Contribution.
-\newblock {\em PoPETs} 2020, 4, 230--250.
+\newblock {\em PoPETs} 2020, 2, 230--250.
 
 \bibitem{niu2023dprovdb}
-S. Niu et al. 2023.
+S. Zhang and X. He. 2023.
 \newblock DProvDB: Differentially Private Query Processing with Multi-Analyst Provenance.
-\newblock In {\em SIGMOD}.
+\newblock {\em Proc. ACM Manag. Data} 1, 4, Article 267 (presented at SIGMOD 2024). arXiv:2309.10240.
 
 \bibitem{kellaris2014dpsqlp}
-G. Kellaris, S. Papadopoulos, X. Xiao, and D. Papadias. 2014--2023 line.
-\newblock Differentially Private Continual Observation / Streaming SQL Aggregates (DP-SQLP).
-\newblock {\em PVLDB} and follow-ups.
+B. Zhang, V. Doroshenko, P. Kairouz, T. Steinke, A. Thakurta, Z. Ma, E. Cohen, H. Apte, and J. Spacek. 2024.
+\newblock Differentially Private Stream Processing at Scale (DP-SQLP).
+\newblock {\em PVLDB} 17, 12. arXiv:2303.18086.
 
 \bibitem{sarus2024qrlew}
-Sarus Technologies. 2024.
-\newblock Qrlew: A SQL-to-DP-SQL Rewriter.
-\newblock Open-source project, \url{https://github.com/Qrlew/qrlew}.
+N. Grislain, P. Roussel, and V. de Sainte Agathe (Sarus Technologies). 2024.
+\newblock Qrlew: Rewriting SQL into Differentially Private SQL.
+\newblock arXiv:2401.06273. Open-source: \url{https://github.com/Qrlew/qrlew}.
 
 \bibitem{dpsqlplus2024}
-DPSQL+ authors. 2024.
-\newblock DPSQL+: Validator-Accountant-Backend Architecture for DP-SQL.
-\newblock Recent system paper (manual bibliographic verification recommended).
+T. Matsumoto, S. Takakura, S. Takagi, and S. Hasegawa. 2026.
+\newblock DPSQL+: A Differentially Private SQL Library with a Minimum Frequency Rule.
+\newblock arXiv:2602.22699.
 
 \bibitem{hay2016dpbench}
 M. Hay, A. Machanavajjhala, G. Miklau, Y. Chen, and D. Zhang. 2016.
@@ -1091,6 +1115,21 @@ W. Dong and K. Yi. 2021.
 W. Dong, J. Fang, K. Yi, Y. Tao, and A. Machanavajjhala. 2022.
 \newblock R2T: Instance-optimal Truncation for Differentially Private Query Evaluation with Foreign Keys.
 \newblock In {\em SIGMOD}, 759--772.
+
+\bibitem{kostopoulou2023turbo}
+K. Kostopoulou, P. Tholoniat, A. Cidon, R. Geambasu, and M. L\'ecuyer. 2023.
+\newblock Turbo: Effective Caching in Differentially-Private Databases.
+\newblock In {\em SOSP}. arXiv:2306.16163.
+
+\bibitem{mazmudar2023cachedp}
+M. Mazmudar, T. Humphries, J. Liu, M. Rafuse, and X. He. 2023.
+\newblock Cache Me If You Can: Accuracy-Aware Inference Engine for Differentially Private Data Exploration.
+\newblock {\em PVLDB} 16, 4. arXiv:2211.15732.
+
+\bibitem{dwork2010continual}
+C. Dwork, M. Naor, T. Pitassi, and G. N. Rothblum. 2010.
+\newblock Differential Privacy Under Continual Observation.
+\newblock In {\em STOC}, 715--724.
 
 \end{thebibliography}
 
