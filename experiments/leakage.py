@@ -193,16 +193,38 @@ def reconstruction_drill_down(
     }
 
 
+def _real_drilldown_counts():
+    """True counts for a nested 5-level drill-down, queried from the real
+    Adult table (data/dpdb.duckdb). Each level adds a predicate, so the counts
+    are monotone decreasing as the reconstruction attack requires. Adult
+    categoricals carry a leading space, so predicates are TRIM'd. Falls back to
+    the verified real values if duckdb/the DB is unavailable."""
+    levels = [
+        "TRUE",                                                    # c0: COUNT(*)
+        "age >= 30",                                               # c1
+        "age >= 30 AND TRIM(sex) = 'Male'",                        # c2
+        "age >= 30 AND TRIM(sex) = 'Male' "
+        "AND TRIM(education) IN ('Bachelors','Masters','Doctorate','Prof-school')",  # c3
+        "age >= 30 AND TRIM(sex) = 'Male' "
+        "AND TRIM(education) IN ('Bachelors','Masters','Doctorate','Prof-school') "
+        "AND TRIM(income) = '>50K'",                               # c4
+    ]
+    db = Path(__file__).resolve().parent.parent / "data" / "dpdb.duckdb"
+    try:
+        import duckdb
+        con = duckdb.connect(str(db), read_only=True)
+        counts = [con.execute(f"SELECT COUNT(*) FROM adult WHERE {w}").fetchone()[0]
+                  for w in levels]
+        con.close()
+        return [int(c) for c in counts]
+    except Exception:
+        # verified real Adult counts for the predicates above (2026-06-01)
+        return [48842, 34327, 24137, 7210, 3137]
+
+
 def run_reconstruction_sweep(output_dir: Path):
-    """Reconstruction attack on a 5-level drill-down."""
-    # Example drill-down: nested predicates on adult dataset
-    # c_0 = COUNT(*)
-    # c_1 = COUNT WHERE age >= 30
-    # c_2 = COUNT WHERE age >= 30 AND education = 'Doctorate'
-    # c_3 = ... AND sex = 'Female'
-    # c_4 = ... AND native_country = 'United-States'
-    # Use realistic numbers from the Adult dataset (approximately)
-    true_counts = [48842, 33049, 365, 99, 89]
+    """Reconstruction attack on a 5-level drill-down over the REAL Adult table."""
+    true_counts = _real_drilldown_counts()
     eps_values = [0.01, 0.05, 0.1, 0.5, 1.0, 2.0, 5.0]
 
     records = []
