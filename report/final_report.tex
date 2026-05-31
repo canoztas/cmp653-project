@@ -1105,4 +1105,50 @@ C. Dwork, M. Naor, T. Pitassi, and G. N. Rothblum. 2010.
 
 \end{thebibliography}
 
+%% ============================================================
+\appendix
+
+\section{Glossary of Key Concepts}
+\label{app:glossary}
+This appendix collects the terminology used in the paper for readers new to DP-SQL budgeting, grouped by theme; each entry is a one-line definition.
+
+\paragraph{Privacy primitives.}
+\begin{description}\itemsep1pt \parskip0pt
+\item[Differential privacy (DP)] adding calibrated noise so a single record's presence is statistically hidden.
+\item[Privacy budget $\eps$] the DP knob: small $\eps$ = more private, noisier; large $\eps$ = accurate, less private. Each release spends from a finite total $B$.
+\item[Laplace mechanism] the noise we add, at scale $\Delta f/\eps_q$.
+\item[Sensitivity $\Delta f$] how much one record can change an answer (COUNT: $1$).
+\item[Sequential composition] the budget ledger: $\eps_{\mathrm{total}}=\sum_i \eps_i$.
+\item[Post-processing] reusing an already-noised answer is free (no budget); the basis of caching.
+\item[Threat model] unbounded, tuple-level (add/remove one row); the query stream is the analyst's, not protected data.
+\end{description}
+
+\paragraph{Workload model.}
+\begin{description}\itemsep1pt \parskip0pt
+\item[Template] a query's structural shape; identical repeats are the same template.
+\item[$u_k$] the number of \emph{distinct} templates in $k$ queries --- the quantity the whole model predicts.
+\item[Occupancy model] the closed form $\E[u_k]=\sum_i[1-(1-p_i)^k]$ (coupon-collector).
+\item[Savings $S(k)$] $1-\E[u_k]/k$: the budget fraction repetition lets us avoid spending.
+\end{description}
+
+\paragraph{Predicting $u_k$ (unseen-species estimation).}
+\begin{description}\itemsep1pt \parskip0pt
+\item[Plug-in estimator] feeding observed frequencies into $\E[u_k]$; under-predicts (its support is only seen templates).
+\item[Unseen-species problem] estimating not-yet-observed templates (the reason plug-in is biased).
+\item[Good--Toulmin / Smoothed GT] horizon-$k$ extrapolators that halve the prediction error for extrapolation factor $t\le 2$.
+\item[Chao1] an asymptotic richness estimator (total, not horizon-$k$); included as a reference.
+\item[Extrapolation factor $t$] $(k-n)/n$: how far past the warmup of size $n$ we predict.
+\end{description}
+
+\paragraph{Online budget allocation.}
+\begin{description}\itemsep1pt \parskip0pt
+\item[Predict-then-allocate] our closed-form policy $\eps_q=B/\hat U$ (training-free).
+\item[BGTplanner / predict-then-bandit] the closest prior work: a \emph{learned} GP+bandit budgeter (federated learning).
+\item[$\eps$-greedy bandit] an online learner that explores allocation choices; our learned baseline.
+\item[Fresh-release MAE] error over cache misses only, isolating allocation quality; reported with \% answered.
+\item[Safe operating point $\eps_q=B/m$] since $u_k\le m$, this never rejects and matches the bandit's best arm with no exploration.
+\item[Exploration tax] the noise a bandit pays sampling worse arms before finding the operating point a closed form computes directly.
+\item[Oracle allocator] $\eps_q=B/u_k$ with $u_k$ known: the upper bound that only a forecast can approach.
+\end{description}
+
 \end{document}
