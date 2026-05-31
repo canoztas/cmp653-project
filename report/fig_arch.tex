@@ -1,0 +1,68 @@
+\documentclass[border=10pt]{standalone}
+\usepackage{tikz}
+\usetikzlibrary{positioning,arrows.meta,shapes.geometric,fit,backgrounds,calc}
+\usepackage{amsmath,amssymb}
+\begin{document}
+\begin{tikzpicture}[
+  font=\footnotesize,
+  >={Latex[length=2mm]},
+  box/.style={rectangle, rounded corners=2pt, draw=black, semithick, fill=blue!8,
+              align=center, inner sep=3pt, minimum height=8mm, text width=37mm},
+  dec/.style={diamond, draw=black, semithick, fill=orange!18, align=center,
+              inner sep=0pt, aspect=2.2, font=\scriptsize, minimum width=20mm},
+  db/.style={cylinder, shape border rotate=90, aspect=0.20, draw=black,
+             fill=gray!15, align=center, inner sep=3pt, minimum height=12mm,
+             minimum width=24mm, font=\scriptsize},
+  side/.style={rectangle, rounded corners=2pt, draw=black, semithick, fill=green!12,
+               align=center, inner sep=3pt, text width=37mm, font=\scriptsize},
+  note/.style={rectangle, draw=gray, densely dashed, fill=yellow!12, align=center,
+               inner sep=3pt, text width=34mm, font=\scriptsize},
+  flow/.style={->, semithick},
+]
+% ---- central spine (absolute coords; y grows downward) ----
+\node (analyst) at (0,0.8)     [box, fill=black!7] {\textbf{Analyst}\,(client)};
+\node (parse)   at (0,-1.8)    [box] {\textbf{Parse \& Validate}\\{\scriptsize COUNT/SUM/AVG, single table;\\reject JOIN, subquery, HAVING, DISTINCT}};
+\node (hash)    at (0,-3.4)    [box] {Template + parameter hash};
+\node (chit)    at (0,-4.9)    [dec] {Cache\\hit?};
+\node (budget)  at (0,-6.9)    [dec] {Budget\\$\ge \varepsilon_q$?};
+\node (sens)    at (0,-8.9)    [box] {\textbf{Sensitivity} $\Delta f$\\{\scriptsize COUNT$=1$,\ SUM$=B_c$,\ AVG$=B_c$}};
+\node (exec)    at (0,-10.4)   [box] {Execute true query};
+\node (noise)   at (0,-11.9)   [box] {\textbf{Laplace noise}\\$\eta\sim\mathrm{Lap}(\Delta f/\varepsilon_q)$,\ per group};
+\node (store)   at (0,-13.4)   [box] {Store in cache \& charge $\varepsilon_q$};
+% ---- right satellites ----
+\node (temp)    at (4.9,-2.9)  [note] {Temporal: staleness $\tau$,\\update rate $\lambda$\\invalidate entries};
+\node (cache)   at (4.9,-4.9)  [db] {Two-level cache\\(template$\to$param)};
+\node (reject)  at (4.9,-6.9)  [box, fill=red!12, text width=27mm] {\textbf{Reject}\\(budget exhausted)};
+\node (ddb)     at (5.1,-10.4) [db] {Backend DB\\DuckDB / PostgreSQL\\(TPC-H)};
+% ---- left satellites ----
+\node (ledger)  at (-4.7,-6.9) [side, fill=orange!12, text width=27mm] {Budget ledger};
+\node (model)   at (-5.0,-9.2) [side] {\textbf{Analytical model}\\$\mathbb{E}[u_k]{=}\sum_i[1{-}(1{-}p_i)^k]$};
+\node (alloc)   at (-5.0,-11.0)[side] {\textbf{Predictive allocator}\\$\varepsilon_q = B/\hat U$};
+% ---- middleware container (spine only) ----
+\begin{scope}[on background layer]
+  \node (mw) [draw=black, densely dashed, rounded corners, inner sep=5mm, fit=(parse)(store)] {};
+  \node[anchor=south east, font=\small\bfseries, text=black!70] at ([xshift=-1mm,yshift=1mm]mw.north west) {DP Middleware};
+\end{scope}
+% ---- flows ----
+\draw[flow] (analyst) -- node[left,font=\scriptsize,pos=0.4] {$q$,\,$\varepsilon_q$} (parse);
+\draw[flow] (parse) -- (hash);
+\draw[flow] (hash) -- (chit);
+\draw[flow] (chit) -- node[above,font=\scriptsize] {lookup} (cache);
+\draw[flow] (chit) -- node[right,font=\scriptsize] {miss} (budget);
+\draw[flow] (budget) -- node[above,font=\scriptsize] {no} (reject);
+\draw[flow] (budget) -- node[right,font=\scriptsize] {yes} (sens);
+\draw[flow] (sens) -- (exec);
+\draw[flow,<->] (exec) -- (ddb);
+\draw[flow] (exec) -- (noise);
+\draw[flow] (noise) -- (store);
+\draw[flow] (ledger.east) -- (budget.west);
+\draw[flow,densely dashed] (alloc.east) to[out=70,in=205] node[font=\scriptsize,pos=0.62,right,inner sep=1pt]{sets $\varepsilon_q$} (budget.west);
+\draw[flow] (model) -- (alloc);
+\draw[flow,densely dashed] (temp) -- node[right,font=\scriptsize,inner sep=1pt]{} (cache);
+% returns to analyst (orthogonal, outer lanes)
+\draw[flow] (chit.east) -- (7.3,-4.9) -- (7.3,0.8) -- (analyst.east);
+\node[font=\scriptsize,align=left] at (8.05,-2.4) {hit:\\cached ans.\\$\Delta\varepsilon{=}0$};
+\draw[flow] (store.west) -- (-7.6,-13.4) -- (-7.6,0.8) -- (analyst.west);
+\node[font=\scriptsize,align=center] at (-8.5,-6.7) {noisy\\answer};
+\end{tikzpicture}
+\end{document}

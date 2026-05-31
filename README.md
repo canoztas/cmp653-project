@@ -95,7 +95,7 @@ experiments/
   aggregate_all_results.py   Combine all CSVs → results/REPORT.md
 
 report/
-  final_report.tex            12-section paper, 9 embedded figures, 39 references
+  final_report.tex            12-section paper, 6 embedded figures, 36 references
   response_to_reviewer.md     Comment-by-comment mapping of instructor feedback
   R2_model_sketch.md          Math derivation + limit checks for the model
   milestone_report.tex        Original milestone (kept for reference)
