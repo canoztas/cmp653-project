@@ -91,7 +91,7 @@ Full benchmark campaign: **4,155 core trials, ~150K queries, six experimental sw
 
 ### Allocation policy (Zipf, m=20, k=100, B=10, 60 trials)
 
-- **Safe closed-form `ε_q = B/m`**: answers **100%** of queries at fresh-release MAE **2.0**, vs an ε-greedy budget bandit's **3.8** at the same 100%-answered rate (~1.9×, ≈18× SEM, adversarially verified across 108 configs). It reaches the bandit's best-case operating point at **zero exploration cost**; only a `u_k` forecast (oracle, MAE 1.6) safely goes lower.
+- **Safe closed-form `ε_q = B/m`**: answers **100%** of queries at fresh-release MAE **2.0**, vs an ε-greedy budget bandit's **3.8** at the same 100%-answered rate (~1.9×, gap ≳9× the standard error, adversarially verified across 108 configs). It reaches the bandit's best-case operating point at **zero exploration cost**; only a `u_k` forecast (oracle, MAE 1.6) safely goes lower.
 - The **predictive allocator** (`ε_q = B/Û`) lowers per-query MAE by up to ~17% at low skew, but the gain is statistically significant only for α ≤ 0.5 (paired t-test) — reported honestly as a low-skew result.
 
 ---
@@ -129,7 +129,7 @@ experiments/
   aggregate_all_results.py   Combine all CSVs → results/REPORT.md
 
 report/
-  final_report.tex            12-section paper, 6 embedded figures, 43 references
+  final_report.tex            12-section paper + appendix, 6 embedded figures, 44 references
   response_to_reviewer.md     Comment-by-comment mapping of instructor feedback
   R2_model_sketch.md          Math derivation + limit checks for the model
   milestone_report.tex        Original milestone (kept for reference)
@@ -137,6 +137,7 @@ report/
 tests/  (86 unit tests, all passing)
   test_parser.py    test_mechanisms.py  test_budget.py    test_template.py
   test_semantic.py  test_model.py       test_predictive.py
+  test_predictors.py  test_allocation_policy.py
 ```
 
 ---

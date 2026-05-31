@@ -2,7 +2,7 @@
 
 **Yazar:** Refik Can Oztas (N25142279) | **Hacettepe Universitesi**
 **Proje basligi:** *Tekrarli Aggregate SQL Workload'lari icin Privacy-Budget Tuketimi Uzerine Bir Istatistiksel Model*
-**Repository:** https://github.com/canoztas/cmp653-project (private, commit `4937bbf`)
+**Repository:** https://github.com/canoztas/cmp653-project (private)
 
 ---
 
@@ -17,7 +17,7 @@ PostgreSQL/DuckDB ustune Python middleware:
 - Sensitivity analyzer
 - Laplace mekanizmasi
 - Workload-aware budget ledger (exact-repeat caching, post-processing property)
-- 28 unit test, TPC-H SF=1 (6M satir lineitem) + UCI Adult dataset
+- Unit test suite, TPC-H SF=1 (6M satir lineitem) + UCI Adult dataset
 - 4 workload ailesi (W1 repetitive, W2 parametric, W3 diverse, W4 drilldown)
 
 ## Hocanin Elestirileri
@@ -52,7 +52,7 @@ Workload, m template'li bir dagilim {p_i}'den i.i.d. cekiliyor. 5 proposition tu
 
 ### R4: Leakage Deneyleri (Calistirildi)
 - **Single-query MIA:** Empirical AUC, teorik `e^ε/(1+e^ε)` bound'una ≤%1 hatayla
-- **Reconstruction (drilldown):** Hata `~2/ε` olcekte, beklenen Laplace standart sapmasiyla uyumlu
+- **Reconstruction (drilldown):** Gercek Adult tablosundan sorgulanan 5-seviyeli drill-down (48842, 34327, 24137, 7210, 3137). Hata ortalama mutlak farkta `~1.5/ε` olcekte (`2/ε` standart sapma)
 - **Shadow-model MIA across W1-W4** (32 cell × 60 shadow run): AUC 0.14-0.58 (cumulative-ε bound 1.0'dan COK dusuk). Honest finding: cumulative budget bound gerc̆ek attack icin loose
 
 ### R5: Inline Yorumlar Tek Tek
@@ -97,7 +97,15 @@ Brief'in onerdigi "yeni mechanism" — modelin pratik kullanimi:
 
 **Bu NEDEN yeni:** PINQ, PrivateSQL, Chorus, DOP-SQL — hepsinde ε_q sabit, analyst tarafindan offline secilir. Bu, **DP-SQL'da modelden surekli ε_q ureten ilk mekanizma**. Mathematical justification: Proposition 5 corollary.
 
-**Sonuc:** MAE %4-17 daha dusuk naive'den, ayni B=10 toplam butce ile.
+**Sonuc (dürüst):** MAE dusuk carpiklikta ~%17'ye kadar daha dusuk; ama paired t-test'e gore kazanc **sadece dusuk carpiklikta anlamli** (α=0'da p≈0.05; α≥1'de p>0.3, yuksek carpiklikta gurultu icinde). Bu yuzden bunu "dusuk-carpiklik ust siniri" olarak veriyoruz.
+
+---
+
+## Tahsis Politikasi + Tahmin Metotlari (en yeni calismalar)
+
+**u_k tahmin metotlari:** Allocator'in kalbi Û tahmini. Mevcut plug-in gorulmeyeni sayamadigindan az tahmin ediyor (*unseen-species* problemi). Good-Toulmin / Smoothed-GT eklendi: makul warmup'ta (t≤2) tahmin hatasini **yariya** indiriyor.
+
+**Tahsis politikasi deneyi (en yakin akraba BGTplanner'a karsi):** BGTplanner butceyi *ogrenen* bir bandit'le dagitir. Gercek bir deney yaptik (naive vs kapali-form vs ε-greedy bandit). Dürüst sonuc: safe kapali-form `ε_q = B/m` (u_k ≤ m oldugundan **asla reddetmez**) %100 cevaplarken fresh-release MAE **2.0**; bandit **3.8** (ayni %100 oranda) → **~1.9× daha iyi**. Cunku closed-form, bandit'in en iyi noktasina **sifir keşif-vergisiyle** atliyor. B/m'in altina *guvenle* inmek u_k tahmini gerektirir (oracle 1.6) — modelsiz bandit yapamaz. Bu galibiyet **5-ajanli adversarial doğrulamadan** gecti (108 config taramasi, DP-gecerlilik denetimi, sifirdan replikasyon).
 
 ---
 
@@ -120,7 +128,7 @@ Brief'in onerdigi "yeni mechanism" — modelin pratik kullanimi:
 | Follow-up trial (§8-§10) | **~3,950** |
 | Aggregated result row | 5,613 |
 | Toplam query | ~150,000 |
-| Unit test | **73/73 passing** |
+| Unit test | **86/86 passing** |
 | Figure (PDF + PNG) | 24 |
 | Workload | 6 |
 | Execution mode | 6 (Exact, Naive, Workload, Semantic, Temporal, **Predictive**) |
@@ -140,7 +148,7 @@ Brief'in onerdigi "yeni mechanism" — modelin pratik kullanimi:
 | R5 | Inline comments | ✅ Her birine cevap |
 | R6 | Benchmark campaign | ✅ SF=1+SF=10, ε sweep, 30 trial/cell |
 | Reproducibility | ✅ figure-to-script tablo |
-| Paper | ✅ final_report.tex (12 section, 9 embed figure) |
+| Paper | ✅ final_report.tex (12 bölüm + Appendix, 6 embed figure, 15 sayfa) |
 | Response-to-reviewer | ✅ response_to_reviewer.md |
 | **BONUS** Predictive allocator | ✅ Yeni mekanizma + experiment |
 | **BONUS** Future Work | ✅ 6 madde |

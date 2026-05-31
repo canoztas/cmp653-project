@@ -271,19 +271,26 @@ def main():
     parser.add_argument("--output", default="results/leakage")
     args = parser.parse_args()
     output_dir = Path(args.output)
+    output_dir.mkdir(parents=True, exist_ok=True)
 
+    mia_df = None
     print("[Leakage] Running MIA sweep...")
-    mia_df = run_mia_sweep(output_dir)
-    plot_mia(mia_df, output_dir)
-    print(f"  Saved {output_dir / 'mia_results.csv'}")
+    try:
+        mia_df = run_mia_sweep(output_dir)
+        plot_mia(mia_df, output_dir)
+        print(f"  Saved {output_dir / 'mia_results.csv'}")
+    except ModuleNotFoundError as e:
+        print(f"  SKIPPED MIA sweep ({e}); install scikit-learn (pip install -e .) "
+              f"to regenerate it. Continuing with the reconstruction sweep.")
 
     print("[Leakage] Running reconstruction sweep...")
     rec_df = run_reconstruction_sweep(output_dir)
     plot_reconstruction(rec_df, output_dir)
     print(f"  Saved {output_dir / 'reconstruction_results.csv'}")
 
-    print("\n[Leakage] MIA summary (selected):")
-    print(mia_df[mia_df["n_with"] == 500].round(4).to_string(index=False))
+    if mia_df is not None:
+        print("\n[Leakage] MIA summary (selected):")
+        print(mia_df[mia_df["n_with"] == 500].round(4).to_string(index=False))
     print("\n[Leakage] Reconstruction summary:")
     print(rec_df[["eps_per_query", "mean_abs_error", "p95_abs_error"]].round(3).to_string(index=False))
 
