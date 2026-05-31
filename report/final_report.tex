@@ -137,6 +137,9 @@ Four recent systems sharpen the boundary of this work's contribution. \textbf{DP
 \paragraph{The gap this report fills.}
 Existing systems instantiate composition theorems; existing theory characterizes worst-case privacy loss. Neither answers \emph{what budget the system will actually spend on a given workload}. The closest precedent is research on the coupon-collector problem and weighted occupancy under non-uniform distributions~\cite{flajolet1992birthday}; I adapt these tools to DP-SQL accounting.
 
+\paragraph{Predicting distinct counts and unseen species.}
+The predictive allocator's core question---how many \emph{distinct} templates will a workload of $k$ queries contain?---is the classical \emph{unseen-species} extrapolation problem: each template is a species, each query an individual drawn from $\{p_i\}$. A plug-in over the \emph{observed} templates (the allocator's default estimator) cannot count templates it has not yet seen, and therefore under-predicts. The statistics literature provides horizon-aware extrapolators that do not: Good--Turing frequency estimation~\cite{good1953goodturing} underlies Good and Toulmin's closed-form prediction of the number of \emph{new} species when a sample grows~\cite{goodtoulmin1956}, Efron and Thisted's empirical-Bayes version (``how many words did Shakespeare know?'')~\cite{efronthisted1976}, and the smoothed Good--Toulmin estimator of Orlitsky, Suresh, and Wu~\cite{orlitsky2016unseen}, provably near-optimal up to a horizon $t\propto\log n$. These answer prediction \emph{at a horizon $k$}; richness estimators such as Chao1~\cite{chao1984} instead estimate the asymptotic total number of species and have no horizon parameter, serving only as an upper reference. On the systems side, single-pass cardinality sketches (HyperLogLog~\cite{flajolet2007hll}) maintain the running distinct count online, and query-based workload forecasting (QueryBot~5000~\cite{ma2018qb5000}) already extracts templates and predicts their future arrival rates. We connect these lines (Section~\ref{sec:predictive}): swapping the plug-in for a smoothed Good--Toulmin estimator roughly halves the $u_k$ prediction error in the realistic warmup regime. To our knowledge no prior work feeds such estimators into a forecast of \emph{differential-privacy budget} consumption.
+
 \paragraph{Comparison with prior systems.}
 Table~\ref{tab:related-comparison} positions this work along seven dimensions. \textbf{A.~Workload model:} does the system maintain a closed-form model of template repetition? \textbf{B.~Predictive budget:} does it forecast future budget consumption? \textbf{C.~Adaptive $\eps_q$:} does it adapt the per-query budget at runtime? \textbf{D.~Temporal:} does it model data updates, staleness, or cache invalidation? \textbf{E.~SQL scope:} what fragment of SQL is supported? \textbf{F.~AI/AST:} does the system use tree-kernel or embedding-based semantic similarity? \textbf{G.~Validation:} what datasets and scales were used?
 
@@ -786,6 +789,26 @@ The allocator's advantage persists at TPC-H SF=10 (60M lineitem rows, 20 trials,
 \paragraph{Composing with the temporal regime.}
 The two new mechanisms compose. Combining the predictive allocator with a finite staleness tolerance $\tau$ (Section~\ref{sec:temporal}) yields lower MAE than temporal alone at every $\tau$ tested (e.g.\ MAE $1.25$ vs $1.76$ at $\tau=100$, $\alpha=1$, $B=50$, $20$ trials), in exchange for spending the full budget rather than the temporal-alone fraction. The choice is a deployment preference: cheap re-noising with higher noise (temporal alone) versus full-budget spend with the lowest achievable noise (combined).
 
+\paragraph{Which estimator predicts $u_k$?}
+The allocator's quality hinges on how well it predicts $u_k$ from the warmup prefix. The default plug-in occupancy estimate (§\ref{sec:predictive}) is the \emph{naive} unseen-species estimator: its support is only the observed templates, so it cannot count the unseen and systematically under-predicts. Table~\ref{tab:predictors} compares it against the horizon-aware alternatives (Section~\ref{sec:related}) on Zipf workloads ($m=50$ templates, $k=100$, $40$ trials), as a function of the extrapolation factor $t=(k-n)/n$ (so $t=1$ means the warmup is half the workload). In the realistic regime where the warmup is at least a third of the workload ($t\le 2$), the Good--Toulmin family roughly halves the prediction error and is near-unbiased, while the plug-in under-predicts by $18$--$43\%$; raw Good--Toulmin diverges past its $t\le 1$ validity limit, and the smoothed estimator~\cite{orlitsky2016unseen} tames it ($27\%$ vs $193\%$ at $t=2$). For very short warmups ($t=4$, warmup $<k/4$) no extrapolator is reliable---beyond the $t\propto\log n$ range---so a conservative bound is the safe choice. Chao1 is roughly flat and increasingly over-predicts, confirming that it answers total richness, not the horizon-$k$ count. A drop-in replacement of the plug-in with the smoothed estimator is therefore the most actionable improvement to the allocator; the estimators are implemented in \texttt{src/dpdb/predictors.py}.
+
+\begin{table}[h]
+\footnotesize
+\centering
+\caption{Mean absolute error of the $u_k$ prediction (\%), by estimator and extrapolation factor $t=(k-n)/n$ (Zipf workloads, $m=50$, $k=100$, averaged over $\alpha\in\{0.5,1,1.5,2\}$, $40$ trials). Lower is better; the plug-in under-predicts at every $t$.}
+\label{tab:predictors}
+\begin{tabular}{l|cccc}
+\toprule
+$u_k$ estimator & $t{=}0.5$ & $t{=}1$ & $t{=}2$ & $t{=}4$ \\
+\midrule
+Plug-in occupancy (current) & 18 & 30 & 43 & 58 \\
+Good--Toulmin~\cite{goodtoulmin1956} & \textbf{8} & \textbf{17} & 193 & 204 \\
+Smoothed GT~\cite{orlitsky2016unseen} & \textbf{8} & \textbf{17} & \textbf{27} & 151 \\
+Chao1 richness (ref.)~\cite{chao1984} & 55 & 48 & 47 & 47 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
 %% ============================================================
 \section{Future Work}
 \label{sec:future-work}
@@ -862,6 +885,41 @@ C. Dwork and A. Roth. 2014.
 P. Flajolet, D. Gardy, and L. Thimonier. 1992.
 \newblock Birthday Paradox, Coupon Collectors, Caching Algorithms and Self-Organizing Search.
 \newblock {\em Discrete Applied Mathematics} 39, 3, 207--229.
+
+\bibitem{good1953goodturing}
+I. J. Good. 1953.
+\newblock The Population Frequencies of Species and the Estimation of Population Parameters.
+\newblock {\em Biometrika} 40, 3--4, 237--264.
+
+\bibitem{goodtoulmin1956}
+I. J. Good and G. H. Toulmin. 1956.
+\newblock The Number of New Species, and the Increase in Population Coverage, When a Sample is Increased.
+\newblock {\em Biometrika} 43, 1--2, 45--63.
+
+\bibitem{efronthisted1976}
+B. Efron and R. Thisted. 1976.
+\newblock Estimating the Number of Unseen Species: How Many Words Did Shakespeare Know?
+\newblock {\em Biometrika} 63, 3, 435--447.
+
+\bibitem{chao1984}
+A. Chao. 1984.
+\newblock Nonparametric Estimation of the Number of Classes in a Population.
+\newblock {\em Scandinavian Journal of Statistics} 11, 4, 265--270.
+
+\bibitem{orlitsky2016unseen}
+A. Orlitsky, A. T. Suresh, and Y. Wu. 2016.
+\newblock Optimal Prediction of the Number of Unseen Species.
+\newblock {\em PNAS} 113, 47, 13283--13288.
+
+\bibitem{flajolet2007hll}
+P. Flajolet, \'E. Fusy, O. Gandouet, and F. Meunier. 2007.
+\newblock HyperLogLog: the Analysis of a Near-optimal Cardinality Estimation Algorithm.
+\newblock In {\em AofA}.
+
+\bibitem{ma2018qb5000}
+L. Ma, D. Van Aken, A. Hefny, G. Mezerhane, A. Pavlo, and G. J. Gordon. 2018.
+\newblock Query-based Workload Forecasting for Self-Driving Database Management Systems.
+\newblock In {\em SIGMOD}, 631--645.
 
 \bibitem{johnson2018towards}
 N. Johnson, J. P. Near, and D. Song. 2018.

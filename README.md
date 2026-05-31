@@ -50,7 +50,7 @@ Three concrete deliverables sit under that frame:
 |---|-------------|----------|---------|
 | 1 | **Analytical model** linking workload structure → privacy budget | `src/dpdb/model.py` + `report/final_report.tex` §4 | Adapts occupancy/coupon-collector theory to DP-SQL budget; closed-form for arbitrary Zipf $\alpha$ |
 | 2 | **Temporal extension** with staleness $\tau$ + update rate $\lambda$ | `src/dpdb/budget.py` (temporal hooks) + paper §5 | First DP-SQL formulation that couples budget with data freshness |
-| 3 | **Predictive budget allocator** built on the model | `src/dpdb/predictive.py` + paper §9 | First DP-SQL mechanism that adapts $\eps_q$ at runtime from a learned workload model |
+| 3 | **Predictive budget allocator** built on the model | `src/dpdb/predictive.py` + paper §10 | Sets $\eps_q$ at runtime from a forecast of future workload consumption; we frame the forecast as the classic **unseen-species** problem and show a Smoothed Good-Toulmin estimator ~halves the prediction error vs the plug-in (`src/dpdb/predictors.py`) |
 
 Plus three honest experimental findings (the kind of negative results that make a paper credible):
 
@@ -99,6 +99,7 @@ The repository is a complete artifact: every figure, table, and number in the pa
 src/dpdb/
   model.py          R2 analytical model: E[u_k], savings ratio, temporal extension
   predictive.py     Online predictive budget allocator built on the model
+  predictors.py     Alternative u_k estimators (plug-in, Good-Toulmin, Smoothed-GT, Chao1)
   semantic.py       AI/AST layer: Tree Kernel + sentence-transformer embedding
   budget.py         Privacy budget ledger (4 strategies, temporal hooks)
   middleware.py     Orchestrator with 6 execution modes
@@ -123,7 +124,7 @@ experiments/
   aggregate_all_results.py   Combine all CSVs → results/REPORT.md
 
 report/
-  final_report.tex            12-section paper, 6 embedded figures, 36 references
+  final_report.tex            12-section paper, 6 embedded figures, 43 references
   response_to_reviewer.md     Comment-by-comment mapping of instructor feedback
   R2_model_sketch.md          Math derivation + limit checks for the model
   milestone_report.tex        Original milestone (kept for reference)
