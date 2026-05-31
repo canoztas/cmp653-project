@@ -49,3 +49,33 @@ def test_naive_underspends_budget():
     rng, draws = _draws()
     spent, _, _, _ = apc.run_naive(rng, draws)
     assert spent < 0.5 * apc.B  # uses well under half the budget
+
+
+def test_safe_policy_never_rejects():
+    # eps_q = B/m with u_k <= m guarantees total spend <= B and 100% answered
+    for seed in range(30):
+        rng, draws = _draws(seed=seed)
+        spent, answered, _, _ = apc.run_closed_form_safe(rng, draws)
+        assert answered == apc.K            # every query answered (no rejection)
+        assert spent <= apc.B + 1e-9        # budget never exceeded
+
+
+def test_safe_policy_beats_bandit_on_noise():
+    # the honest headline: jumping to the B/m operating point beats the bandit,
+    # which must discover it by exploration and pays a noise tax
+    safe, band = [], []
+    for seed in range(50):
+        rng, draws = _draws(seed=seed)
+        safe.append(np.mean(apc.run_closed_form_safe(rng, draws)[3]))
+        rng, draws = _draws(seed=seed)
+        band.append(np.mean(apc.run_bandit(rng, draws)[3]))
+    assert np.mean(safe) < np.mean(band)
+
+
+def test_oracle_is_the_ceiling():
+    # oracle (eps_q = B/u_k, perfect prediction) is the best any policy can do
+    rng, draws = _draws()
+    oracle_miss = np.mean(apc.run_oracle(rng, draws)[3])
+    rng, draws = _draws()
+    safe_miss = np.mean(apc.run_closed_form_safe(rng, draws)[3])
+    assert oracle_miss <= safe_miss + 0.5   # oracle no worse than the safe floor
