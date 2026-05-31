@@ -242,6 +242,26 @@ R2T \cite{dong2022r2t}
 \paragraph{Our differentiation.}
 This is the only system that combines a closed-form model of template-repetition skew, an online forecast of \emph{future} budget consumption, and a coupling of budget to data freshness in one DP-SQL middleware. Budget-saving DP caches such as Turbo~\cite{kostopoulou2023turbo} and CacheDP~\cite{mazmudar2023cachedp} reuse prior noisy answers to conserve budget, but they do not forecast what a workload will spend. APEx~\cite{ge2019apex} and Pythia~\cite{kotsogiannis2017pythia} adapt to the \emph{current} query, not to a forecast of the future workload. Workload-aware mechanisms~\cite{li2010mm,mckenna2018hdmm} and production engines~\cite{berghel2022tumult,opendp2023} optimize or deploy DP-SQL but allocate budget statically. We therefore do not claim to beat any single baseline; we claim a combination none of them provides---and we report where it fails (the honest negative of §\ref{sec:semantic}).
 
+\paragraph{Quantitative positioning.}
+The numerical case splits into two comparison classes, each stated against the accounting that class actually uses---we did not run any system head-to-head (Table~\ref{tab:positioning}). \emph{Against naive-composition DP-SQL systems} (PINQ~\cite{mcsherry2009privacy}, Chorus~\cite{johnson2020chorus}, PrivateSQL~\cite{kotsogiannis2019privatesql}, DOP-SQL~\cite{yu2024dopsql}, and per-query allocators such as APEx~\cite{ge2019apex} and Pythia~\cite{kotsogiannis2017pythia}), a repeated or parametric workload of $k{=}100$ queries costs the full $k\,\eps_q$, whereas workload-aware accounting spends only $\eps_q\,\E[u_k]$---empirically $14\times$ to $100\times$ less budget for the same answers (W1 $100\times$, W2 $33\times$/$20\times$/$14.3\times$, W3 $14.3\times$, and honestly $1\times$ on the genuine drill-down W4). \emph{Against budget-saving DP caches} (Turbo~\cite{kostopoulou2023turbo}, CacheDP~\cite{mazmudar2023cachedp}), the budget saving alone is \emph{not} our differentiator: they too reuse noisy answers and reach the same $\eps_q\,\E[u_k]$ order of cost. What they lack and we add is (i) a closed-form \emph{forecast} of consumption that predicts $\E[u_k]$ within $<3\%$ in 21 of 24 main-grid cells \emph{before any query runs}, and (ii) a model-driven predictive allocator that converts the forecast into a $5$--$17\%$ per-query MAE reduction at fixed total budget (at the cost of rejecting $12$--$31\%$ of late queries). A reimplementation of these systems on a common harness is out of scope and left to future work.
+
+\begin{table}[h]
+\footnotesize
+\centering
+\caption{Quantitative positioning by class, for $k{=}100$ repeated/parametric queries. Values reflect each class's \emph{accounting model}, not a head-to-head benchmark (no system was rerun here); under template skew $\E[u_k]\ll k$, giving the $14$--$100\times$ savings of §\ref{sec:eval}. This work additionally \emph{forecasts} $\E[u_k]$ within $<3\%$ before any query runs.}
+\label{tab:positioning}
+\renewcommand{\arraystretch}{1.15}
+\begin{tabular}{p{2.4cm}|c|c|c}
+\toprule
+System class & Budget/100 & Forecast? & Adapt $\eps_q$? \\
+\midrule
+Naive-comp.\ DP-SQL & $100\,\eps_q$ & No & No \\
+DP caches (Turbo/CacheDP) & $\eps_q\E[u_k]$ & No & No \\
+\textbf{This work} & $\eps_q\E[u_k]$ & \textbf{Yes} & \textbf{Yes} \\
+\bottomrule
+\end{tabular}
+\end{table}
+
 %% ============================================================
 \section{Threat Model and Preliminaries}
 \label{sec:threat}

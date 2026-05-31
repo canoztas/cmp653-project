@@ -10,6 +10,34 @@ A Python middleware that intercepts aggregate SQL queries (COUNT, SUM, AVG), add
 
 ---
 
+## The problem
+
+Aggregate SQL queries like `COUNT`, `SUM`, and `AVG` look harmless — they only ever return a single number, never an individual row. But two overlapping aggregates can quietly unmask one person: ask "how many patients are HIV-positive?" and then "how many patients *other than Alice* are HIV-positive?", and the difference between the two answers reveals Alice's status. Differential privacy stops this by adding calibrated noise to every answer, but each noisy answer spends a slice of a finite **privacy budget** — and on a busy dashboard that budget drains fast.
+
+## The idea
+
+The amount of budget a workload spends is a *structural property of the workload itself*, not of the database. If you know how often each query template tends to repeat, you can predict — in closed form, before running a single query — how much budget the workload will consume and how much accuracy you can buy with it. Exact-repeat caching (reuse a noisy answer for free) is not a separate trick here; it is just the extreme case where every query is identical.
+
+## How it works
+
+- **The closed-form model.** Given a distribution `{p_i}` over query templates and a workload of `k` queries, the expected number of *distinct* templates that actually run is `E[u_k] = Σ_i [1 − (1 − p_i)^k]`. Since you only pay budget the first time a template is seen, the expected budget is `E[ε_wa] = ε_q · E[u_k]` (per-query budget × distinct templates), and the savings versus naive accounting is `S(k) = 1 − E[u_k]/k`. At high skew this approaches the `1 − 1/k` caching limit; at uniform skew it collapses to naive composition (you pay for every query).
+- **The middleware pipeline.** Each incoming query is parsed and validated against the supported aggregate subset, hashed by (template, parameters), and checked against the cache. A hit is returned for free (post-processing, zero budget cost); a miss is charged `ε_q`, executed, perturbed with Laplace noise, and stored.
+- **The predictive allocator.** Instead of fixing the per-query budget up front, the allocator estimates the distinct-template count `Û` at runtime and sets `ε_q = B / Û` (total budget over expected unique queries), spreading the budget to minimize error — and explicitly rejecting late queries once the budget is exhausted rather than silently lying.
+- **The temporal extension.** Real data changes, so cached answers go stale. A staleness tolerance `τ` (how long a cached answer stays valid) and a Poisson update rate `λ` (how fast data changes) feed into the same budget expression, so freshness requirements are priced directly into the forecast.
+
+## What we did, step by step
+
+1. Reframed the contribution from "caching saves budget" to "a model that *predicts* budget consumption from the template distribution," with caching as a corollary.
+2. Derived the closed-form model — `E[u_k]`, the budget `ε_q · E[u_k]`, and the savings ratio `S(k)` — with proofs and two clean limiting cases.
+3. Added a temporal extension that couples budget to data freshness via staleness `τ` and update rate `λ`.
+4. Built a unit-tested DP-SQL middleware over DuckDB/PostgreSQL with four execution modes (exact, naive DP, workload-aware DP, temporal DP).
+5. Designed a predictive online allocator that sets `ε_q = B/Û` from the model's live estimate.
+6. Ran a 4,155-trial validation campaign across Zipf-skewed workloads, four privacy levels, and TPC-H (SF=1 and SF=10) plus the Adult dataset.
+7. Stress-tested leakage with single-query and shadow-model membership inference and a five-level differencing/reconstruction attack against theoretical bounds.
+8. Tested an AI/AST semantic cache and reported it as an honest negative — structural similarity is not query equivalence.
+
+---
+
 ## What This Project Is
 
 The milestone version framed exact-repeat caching as the contribution. The instructor (correctly) flagged that as a trivial consequence of DP's post-processing property. The final version reframes:
@@ -58,7 +86,7 @@ Full benchmark campaign: **4,155 core trials, ~150K queries, six experimental sw
 ### Privacy leakage
 
 - **Single-query MIA AUC** matches theoretical $e^\eps/(1+e^\eps)$ within ≤1%
-- **Reconstruction error** scales as $2/\eps$ as predicted
+- **Reconstruction error** (mean) scales as $1.5/\eps$ as predicted
 - **Workload-level shadow-model MIA AUC** = 0.14–0.58 (much lower than the cumulative bound 1.0)
 
 ---
