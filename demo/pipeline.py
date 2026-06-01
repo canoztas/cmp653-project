@@ -83,7 +83,11 @@ class DemoSession:
     def _state(self):
         b = self.mw.budget
         spent = b.consumed_epsilon if b else 0.0
-        u_k = len(self.unique)
+        u_k = len(self.unique)                       # distinct TEMPLATES (model u_k)
+        # actual budget savings come from cache HITS (exact template+param repeats),
+        # not from template repeats: a parametric template with new literals is a
+        # paid MISS. Report the true, budget-faithful savings here.
+        hits = sum(1 for h in self.history if h.get("hit"))
         st = {
             "mode": self.mode,
             "budget_total": round(self.B, 4),
@@ -92,7 +96,8 @@ class DemoSession:
             "cache_size": self._cache_size(),
             "queries_seen": self.queries_seen,
             "u_k": u_k,
-            "savings_pct": round(100 * (1 - u_k / self.queries_seen), 1) if self.queries_seen else 0.0,
+            "cache_hits": hits,
+            "savings_pct": round(100 * hits / self.queries_seen, 1) if self.queries_seen else 0.0,
             "uhat": round(self._uhat(), 2) if self.mode == "predictive" else None,
             "semantic_hits": b.semantic_hits if b else 0,
             "expired_evictions": (b.expired_evictions + getattr(b, "update_evictions", 0)) if b else 0,

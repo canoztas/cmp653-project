@@ -16,6 +16,22 @@ python demo/app.py                # -> http://127.0.0.1:5000
 
 Open the URL in a browser.
 
+## The interface
+
+- **Plain-language explanations** under every step — what it does and why it
+  matters — alongside the real technical detail, in **English or Turkish**
+  (EN/TR toggle, top-right; remembered across visits).
+- **Terminology glossary** — a slide-in drawer (the *Terms / Sözlük* button, the
+  `g` key, or any clickable **term chip**) with searchable, grouped definitions
+  (privacy primitives, workload model, caching/temporal, predicting the budget),
+  bilingual, mirroring the paper's Appendix A.
+- **Colour semantics** everywhere (badges, step icons, chart, timeline): blue =
+  spend, green = free cache hit, amber = miss, purple = L2 semantic, red =
+  reject/error. A connector rail fills as the query progresses.
+- The explanatory content lives in `demo/content.json` (verified against the
+  code); the live technical detail, SQL, hashes and numbers always come from the
+  real backend.
+
 ## What you see
 
 The page animates the query through **exactly the steps `DPMiddleware.execute()`

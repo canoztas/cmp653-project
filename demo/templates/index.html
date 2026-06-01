@@ -6,168 +6,214 @@
 <title>DP-SQL Middleware — Live Pipeline Demo</title>
 <style>
   :root{
-    --bg:#0e1117; --panel:#161b22; --panel2:#1c232d; --line:#30363d;
-    --txt:#e6edf3; --dim:#8b949e; --blue:#388bfd; --green:#3fb950;
-    --amber:#d29922; --red:#f85149; --purple:#a371f7;
+    --bg:#0d1117; --panel:#161b22; --panel2:#1c2431; --line:#2b333d; --line2:#3a4452;
+    --txt:#e6edf3; --dim:#9aa6b2; --faint:#6b7681;
+    --blue:#4493f8; --green:#3fb950; --amber:#d29922; --red:#f85149; --purple:#a371f7;
+    --blue-bg:rgba(68,147,248,.14); --green-bg:rgba(63,185,80,.14);
+    --amber-bg:rgba(210,153,34,.14); --red-bg:rgba(248,81,73,.14); --purple-bg:rgba(163,113,247,.14);
+    --r:10px;
   }
   *{box-sizing:border-box}
+  html{scroll-behavior:smooth}
   body{margin:0;background:var(--bg);color:var(--txt);
-    font:14px/1.5 -apple-system,Segoe UI,Roboto,sans-serif}
-  code,.mono{font-family:"Cascadia Code",Consolas,monospace}
-  header{padding:14px 20px;border-bottom:1px solid var(--line);
-    display:flex;align-items:baseline;gap:12px}
-  header h1{font-size:17px;margin:0}
-  header .sub{color:var(--dim);font-size:12px}
-  .wrap{max-width:1180px;margin:0 auto;padding:16px 20px}
-  .controls{background:var(--panel);border:1px solid var(--line);border-radius:10px;
-    padding:14px;display:grid;gap:10px;margin-bottom:16px}
+    font:14px/1.55 -apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif}
+  .mono{font-family:"Cascadia Code",Consolas,ui-monospace,monospace}
+  /* appbar */
+  .appbar{position:sticky;top:0;z-index:40;display:flex;align-items:center;gap:14px;
+    padding:11px 20px;background:rgba(13,17,23,.86);backdrop-filter:blur(8px);
+    border-bottom:1px solid var(--line)}
+  .appbar h1{font-size:16px;margin:0;font-weight:650}
+  .appbar h1 span{color:var(--dim);font-weight:400}
+  .appbar .spacer{flex:1}
+  .seg{display:inline-flex;border:1px solid var(--line2);border-radius:8px;overflow:hidden}
+  .seg button{background:transparent;color:var(--dim);border:0;padding:6px 12px;cursor:pointer;font-size:12px;font-weight:600}
+  .seg button.on{background:var(--blue);color:#fff}
+  .btn{background:var(--panel2);color:var(--txt);border:1px solid var(--line2);border-radius:8px;
+    padding:7px 12px;font-size:13px;cursor:pointer;display:inline-flex;gap:7px;align-items:center}
+  .btn:hover{border-color:var(--blue)}
+  .btn.primary{background:var(--blue);border-color:var(--blue);color:#fff;font-weight:650}
+  .btn.ghost{background:transparent;border-color:transparent;color:var(--dim);font-size:12px;padding:5px 9px}
+  .btn.ghost:hover{color:var(--txt);background:var(--panel2)}
+  svg.ic{width:16px;height:16px;stroke:currentColor;fill:none;stroke-width:1.8;
+    stroke-linecap:round;stroke-linejoin:round;flex:none}
+  .wrap{max-width:1200px;margin:0 auto;padding:16px 20px 40px}
+  /* onboarding */
+  .onb{background:var(--blue-bg);border:1px solid var(--blue);border-radius:var(--r);
+    padding:11px 14px;margin-bottom:14px;display:flex;gap:10px;align-items:flex-start;font-size:13px}
+  .onb b{color:var(--blue)}
+  .onb .x{margin-left:auto;cursor:pointer;color:var(--dim)}
+  /* controls */
+  .controls{background:var(--panel);border:1px solid var(--line);border-radius:var(--r);
+    padding:13px;display:grid;gap:10px;margin-bottom:16px}
   .row{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
-  input[type=text],select,input[type=number]{background:#0d1117;color:var(--txt);
-    border:1px solid var(--line);border-radius:7px;padding:8px 10px;font-size:13px}
-  input#sql{flex:1;min-width:320px;font-family:Consolas,monospace}
-  input[type=number]{width:74px}
+  input[type=text],input[type=number]{background:#0b0f14;color:var(--txt);
+    border:1px solid var(--line2);border-radius:8px;padding:9px 11px;font-size:13px}
+  input#sql{flex:1;min-width:300px;font-family:Consolas,monospace}
+  input[type=number]{width:70px}
   label.fld{color:var(--dim);font-size:12px;display:flex;align-items:center;gap:5px}
-  button{background:var(--panel2);color:var(--txt);border:1px solid var(--line);
-    border-radius:7px;padding:8px 13px;font-size:13px;cursor:pointer}
-  button:hover{border-color:var(--blue)}
-  button.primary{background:var(--blue);border-color:var(--blue);font-weight:600}
-  button.ghost{background:transparent;font-size:12px;padding:5px 9px;color:var(--dim)}
-  .grid{display:grid;grid-template-columns:minmax(0,1fr) 360px;gap:16px}
-  @media(max-width:880px){.grid{grid-template-columns:1fr}}
-  .card{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:14px}
-  .card h2{font-size:12px;text-transform:uppercase;letter-spacing:.6px;color:var(--dim);
-    margin:0 0 12px}
-  /* pipeline steps */
-  .step{display:flex;gap:11px;padding:9px 11px;border:1px solid var(--line);
-    border-radius:9px;margin-bottom:8px;opacity:.32;transition:.25s;background:#0d1117}
-  .step.on{opacity:1;border-color:var(--blue);box-shadow:0 0 0 1px var(--blue)}
-  .step.done{opacity:.9}
-  .step .num{width:24px;height:24px;border-radius:50%;background:var(--panel2);
-    border:1px solid var(--line);display:flex;align-items:center;justify-content:center;
-    font-size:12px;flex:none;font-weight:600}
-  .step.on .num{background:var(--blue);border-color:var(--blue)}
-  .step .body{min-width:0}
-  .step .nm{font-weight:600;font-size:13px}
-  .step .dt{color:var(--dim);font-size:12px;font-family:Consolas,monospace;
-    word-break:break-word;margin-top:2px}
-  .badge{font-size:10px;padding:1px 7px;border-radius:20px;margin-left:7px;vertical-align:middle}
-  .b-ok{background:rgba(56,139,253,.16);color:var(--blue)}
-  .b-hit{background:rgba(63,185,80,.16);color:var(--green)}
-  .b-miss{background:rgba(210,153,34,.16);color:var(--amber)}
-  .b-reject,.b-error{background:rgba(248,81,73,.16);color:var(--red)}
-  .s-ok .num{border-color:var(--blue)} .s-hit.on .num{background:var(--green);border-color:var(--green)}
-  .s-hit .nm{} .s-reject .num,.s-error .num{border-color:var(--red)}
-  /* budget bar */
-  .bar{height:22px;background:#0d1117;border:1px solid var(--line);border-radius:6px;
-    overflow:hidden;position:relative}
-  .bar>i{display:block;height:100%;background:linear-gradient(90deg,var(--blue),var(--purple));
-    width:0;transition:width .4s}
+  .modechips{display:inline-flex;flex-wrap:wrap;gap:6px}
+  .modechips button{background:#0b0f14;border:1px solid var(--line2);color:var(--dim);
+    border-radius:20px;padding:5px 12px;font-size:12px;cursor:pointer;font-weight:600}
+  .modechips button.on{background:var(--blue-bg);border-color:var(--blue);color:var(--blue)}
+  .pills button{font-size:11.5px}
+  .hint{color:var(--faint);font-size:11px}
+  /* layout */
+  .grid{display:grid;grid-template-columns:minmax(0,1fr) 348px;gap:16px}
+  @media(max-width:900px){.grid{grid-template-columns:1fr}}
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:var(--r);padding:14px}
+  .card>h2{font-size:11px;text-transform:uppercase;letter-spacing:.7px;color:var(--dim);margin:0 0 12px;font-weight:700}
+  /* steps */
+  #steps{position:relative}
+  .step{display:grid;grid-template-columns:34px 1fr;gap:11px;padding:0 0 14px;position:relative;opacity:.4;transition:opacity .25s}
+  .step.on,.step.done{opacity:1}
+  .step:not(:last-child)::before{content:"";position:absolute;left:16px;top:34px;bottom:0;width:2px;background:var(--line)}
+  .step.done:not(:last-child)::before,.step.on:not(:last-child)::before{background:var(--accent,var(--line2))}
+  .step__icon{width:34px;height:34px;border-radius:9px;display:flex;align-items:center;justify-content:center;
+    background:var(--panel2);border:1px solid var(--line2);color:var(--dim);z-index:1;transition:.25s}
+  .step.on .step__icon,.step.done .step__icon{background:var(--accent-bg);border-color:var(--accent);color:var(--accent)}
+  .step.on .step__icon{box-shadow:0 0 0 4px var(--accent-bg)}
+  .step__body{min-width:0;padding-top:2px}
+  .step__head{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+  .step__title{font-weight:650;font-size:13.5px}
+  .badge{font-size:9.5px;font-weight:700;letter-spacing:.4px;padding:2px 7px;border-radius:20px;
+    background:var(--accent-bg);color:var(--accent)}
+  .step__tech{color:var(--dim);font-family:Consolas,monospace;font-size:12px;margin-top:4px;word-break:break-word}
+  .step__plain{font-size:12.5px;margin-top:6px;color:var(--txt)}
+  .step__why{font-size:11.5px;margin-top:3px;color:var(--faint)}
+  .chips{display:flex;flex-wrap:wrap;gap:5px;margin-top:7px}
+  .chip{font-size:10.5px;border:1px solid var(--line2);border-radius:20px;padding:2px 9px;
+    color:var(--dim);cursor:pointer;background:#0b0f14}
+  .chip:hover{border-color:var(--blue);color:var(--blue)}
+  .chip::before{content:"";display:inline-block;width:5px;height:5px;border-radius:50%;
+    background:var(--blue);margin-right:5px;vertical-align:middle}
+  .legend{font-size:11px;color:var(--dim);display:flex;gap:13px;flex-wrap:wrap;margin-top:6px;padding-top:10px;border-top:1px solid var(--line)}
+  .dot{display:inline-block;width:9px;height:9px;border-radius:3px;margin-right:4px;vertical-align:middle}
+  /* right panel */
+  .bar{height:24px;background:#0b0f14;border:1px solid var(--line2);border-radius:7px;overflow:hidden}
+  .bar>i{display:block;height:100%;width:0;background:linear-gradient(90deg,var(--blue),var(--purple));transition:width .4s}
   .bar.full>i{background:linear-gradient(90deg,var(--amber),var(--red))}
-  .kv{display:flex;justify-content:space-between;font-size:12px;margin:3px 0;color:var(--dim)}
+  .kv{display:flex;justify-content:space-between;font-size:12px;margin:4px 0;color:var(--dim)}
   .kv b{color:var(--txt);font-family:Consolas,monospace}
-  .ans{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:8px}
-  .ans .box{background:#0d1117;border:1px solid var(--line);border-radius:8px;padding:8px}
-  .ans .box .lab{font-size:10px;color:var(--dim);text-transform:uppercase}
-  .ans .box .val{font-family:Consolas,monospace;font-size:16px;margin-top:2px;word-break:break-all}
+  .ans{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:9px}
+  .ans .box{background:#0b0f14;border:1px solid var(--line2);border-radius:8px;padding:8px}
+  .ans .lab{font-size:9.5px;color:var(--dim);text-transform:uppercase;letter-spacing:.4px}
+  .ans .val{font-family:Consolas,monospace;font-size:15px;margin-top:3px;word-break:break-all}
   .val.true{color:var(--dim)} .val.noisy{color:var(--green)}
-  /* chart */
-  .chart{display:flex;align-items:flex-end;gap:3px;height:84px;padding-top:6px;
-    border-bottom:1px solid var(--line);overflow-x:auto}
-  .chart .bx{flex:none;width:12px;background:var(--blue);border-radius:2px 2px 0 0;
-    min-height:2px;position:relative}
-  .chart .bx.hit{background:var(--green);height:5px!important}
-  .chart .bx.reject{background:var(--red)}
-  .tl{display:flex;gap:4px;flex-wrap:wrap;margin-top:8px;font-size:13px}
-  .tl span{font-family:monospace}
-  .hint{color:var(--dim);font-size:11px;margin-top:6px}
-  .pills button{font-size:11px;padding:4px 8px}
-  .legend{font-size:11px;color:var(--dim);display:flex;gap:12px;margin-top:6px}
-  .dot{display:inline-block;width:9px;height:9px;border-radius:2px;margin-right:4px;vertical-align:middle}
+  .chart{display:flex;align-items:flex-end;gap:3px;height:80px;padding-top:6px;border-bottom:1px solid var(--line);overflow-x:auto}
+  .bx{flex:none;width:11px;background:var(--blue);border-radius:2px 2px 0 0;min-height:3px}
+  .bx.hit{background:var(--green);height:5px!important}
+  .bx.l2{background:var(--purple);height:5px!important}
+  .bx.reject{background:var(--red)}
+  .tl{display:flex;gap:4px;flex-wrap:wrap;margin-top:8px;font-family:monospace;font-size:13px}
+  /* glossary drawer */
+  .scrim{position:fixed;inset:0;background:rgba(0,0,0,.5);opacity:0;pointer-events:none;transition:.2s;z-index:50}
+  .scrim.open{opacity:1;pointer-events:auto}
+  .drawer{position:fixed;top:0;right:0;height:100%;width:420px;max-width:92vw;background:var(--panel);
+    border-left:1px solid var(--line2);transform:translateX(100%);transition:transform .25s;z-index:51;
+    display:flex;flex-direction:column}
+  .drawer.open{transform:none}
+  .drawer header{display:flex;align-items:center;gap:10px;padding:14px 16px;border-bottom:1px solid var(--line)}
+  .drawer header h3{margin:0;font-size:14px}
+  .drawer .body{overflow:auto;padding:12px 16px}
+  #gsearch{width:100%;margin-bottom:10px}
+  .ggroup{font-size:10.5px;text-transform:uppercase;letter-spacing:.6px;color:var(--blue);
+    margin:14px 0 7px;font-weight:700}
+  .gitem{padding:9px 11px;border:1px solid var(--line);border-radius:8px;margin-bottom:7px;background:#0b0f14}
+  .gitem .gt{font-weight:650;font-size:12.5px}
+  .gitem .gd{color:var(--dim);font-size:12px;margin-top:3px}
+  .gitem.flash{animation:flash 1s}
+  @keyframes flash{0%,100%{border-color:var(--line)}30%{border-color:var(--amber);box-shadow:0 0 0 2px var(--amber-bg)}}
+  .x{cursor:pointer;color:var(--dim);font-size:18px;line-height:1}
 </style>
 </head>
 <body>
-<header>
-  <h1>DP-SQL Middleware <span style="color:var(--dim)">— Live Pipeline Demo</span></h1>
-  <span class="sub">every query runs through the real <code>src/dpdb</code> components over the real Adult table</span>
-</header>
+<div class="appbar">
+  <h1>DP-SQL Middleware <span data-en="— Live Pipeline" data-tr="— Canlı Pipeline">— Live Pipeline</span></h1>
+  <div class="spacer"></div>
+  <div class="seg" id="lang"><button data-l="en" class="on">EN</button><button data-l="tr">TR</button></div>
+  <button class="btn" id="glossaryBtn"><svg class="ic" viewBox="0 0 24 24"><path d="M4 5a2 2 0 0 1 2-2h12v18H6a2 2 0 0 1-2-2z"/><path d="M8 7h7M8 11h7"/></svg><span data-en="Terms" data-tr="Sözlük">Terms</span></button>
+</div>
 
 <div class="wrap">
+  <div class="onb" id="onb">
+    <svg class="ic" viewBox="0 0 24 24" style="color:var(--blue)"><circle cx="12" cy="12" r="9"/><path d="M12 16v-5M12 8h.01"/></svg>
+    <div><b data-en="How to read this" data-tr="Nasıl okunur">How to read this</b> —
+      <span data-en="type or pick a query and hit Run. Watch it flow through every real pipeline step (highlighted one by one), each with a plain-language explanation. Click any term chip or “Terms” for definitions. Toggle EN/TR top-right."
+            data-tr="bir sorgu yazın ya da seçip Çalıştır’a basın. Sorgunun her gerçek pipeline adımından tek tek (vurgulanarak) geçişini izleyin; her adımın düz-dil açıklaması var. Terim çiplerine ya da “Sözlük”e tıklayıp tanımları görün. Sağ üstten EN/TR.">type or pick a query and hit Run…</span></div>
+    <span class="x" id="onbx">✕</span>
+  </div>
+
   <div class="controls">
     <div class="row">
-      <input id="sql" type="text" value="SELECT COUNT(*) FROM adult WHERE age >= 30"
-             placeholder="SELECT COUNT(*)/SUM(col)/AVG(col) FROM adult WHERE … [GROUP BY …]">
-      <button class="primary" id="run">Run ▶</button>
-      <button id="reset">Reset</button>
+      <input id="sql" type="text" value="SELECT COUNT(*) FROM adult WHERE age >= 30">
+      <button class="primary btn" id="run"><svg class="ic" viewBox="0 0 24 24"><path d="M6 4l14 8-14 8z"/></svg><span data-en="Run" data-tr="Çalıştır">Run</span></button>
+      <button class="btn" id="reset"><span data-en="Reset" data-tr="Sıfırla">Reset</span></button>
     </div>
     <div class="row">
-      <label class="fld">Mode
-        <select id="mode">
-          <option value="predictive">predictive (ε_q=B/Û)</option>
-          <option value="workload">workload-aware (cache free)</option>
-          <option value="semantic">semantic (+L2 similarity)</option>
-          <option value="temporal">temporal (τ staleness, λ updates)</option>
-          <option value="naive">naive (no cache)</option>
-          <option value="exact">exact (no DP)</option>
-        </select></label>
+      <span class="fld" data-en="Mode:" data-tr="Mod:">Mode:</span>
+      <div class="modechips" id="modechips"></div>
+    </div>
+    <div class="row">
       <label class="fld">B <input type="number" id="B" value="10" step="1" min="1"></label>
       <label class="fld">ε_fixed <input type="number" id="epsf" value="1" step="0.5" min="0.1"></label>
       <label class="fld">k <input type="number" id="k" value="20" step="1" min="1"></label>
       <label class="fld tmp">τ <input type="number" id="tau" value="2" step="1" min="1"></label>
       <label class="fld tmp">λ <input type="number" id="lam" value="0.5" step="0.1" min="0" max="1"></label>
-      <label class="fld">speed
-        <input type="range" id="speed" min="80" max="900" value="420"></label>
-      <label class="fld"><input type="checkbox" id="stepmode"> step-by-step</label>
-      <button class="ghost" id="next" style="display:none">Next ▶</button>
+      <label class="fld" data-en="speed" data-tr="hız">speed <input type="range" id="speed" min="80" max="900" value="420"></label>
+      <label class="fld"><input type="checkbox" id="stepmode"> <span data-en="step-by-step" data-tr="adım adım">step-by-step</span></label>
+      <button class="btn ghost" id="next" style="display:none"><span data-en="Next ▶" data-tr="Sonraki ▶">Next ▶</span></button>
     </div>
     <div class="row pills">
-      <span class="fld">Examples:</span>
-      {% for ex in examples %}<button class="ghost ex">{{ ex }}</button>{% endfor %}
+      <span class="fld" data-en="Examples:" data-tr="Örnekler:">Examples:</span>
+      {% for ex in examples %}<button class="btn ghost ex">{{ ex }}</button>{% endfor %}
     </div>
     <div class="row pills">
-      <span class="fld">Workloads:</span>
-      {% for p in presets %}<button class="ghost preset">{{ p }}</button>{% endfor %}
-      <span class="hint">↑ runs a sequence so you watch the budget deplete &amp; cache hits go free</span>
+      <span class="fld" data-en="Workloads:" data-tr="İş yükleri:">Workloads:</span>
+      {% for p in presets %}<button class="btn ghost preset">{{ p }}</button>{% endfor %}
+      <span class="hint" data-en="↑ a sequence — watch the budget deplete &amp; repeats go free" data-tr="↑ bir dizi — bütçenin erimesini &amp; tekrarların bedava olmasını izleyin">↑ a sequence…</span>
     </div>
   </div>
 
   <div class="grid">
     <div class="card">
-      <h2>Pipeline — query passes through each step</h2>
+      <h2 data-en="Pipeline — the query passes through every real step" data-tr="Pipeline — sorgu her gerçek adımdan geçiyor">Pipeline</h2>
       <div id="steps"></div>
       <div class="legend">
-        <span><i class="dot" style="background:var(--blue)"></i>spend</span>
-        <span><i class="dot" style="background:var(--green)"></i>cache hit (free)</span>
-        <span><i class="dot" style="background:var(--amber)"></i>miss</span>
-        <span><i class="dot" style="background:var(--red)"></i>reject / error</span>
+        <span><i class="dot" style="background:var(--blue)"></i><span data-en="spend" data-tr="harca">spend</span></span>
+        <span><i class="dot" style="background:var(--green)"></i><span data-en="free cache hit" data-tr="bedava önbellek">free cache hit</span></span>
+        <span><i class="dot" style="background:var(--amber)"></i><span data-en="miss" data-tr="ıska">miss</span></span>
+        <span><i class="dot" style="background:var(--purple)"></i><span data-en="L2 semantic" data-tr="L2 semantik">L2 semantic</span></span>
+        <span><i class="dot" style="background:var(--red)"></i><span data-en="reject / error" data-tr="red / hata">reject / error</span></span>
       </div>
     </div>
 
     <div>
       <div class="card" style="margin-bottom:14px">
-        <h2>Privacy budget ledger</h2>
+        <h2 data-en="Privacy budget ledger" data-tr="Gizlilik bütçe defteri">Budget</h2>
         <div class="bar" id="barwrap"><i id="bar"></i></div>
-        <div class="kv" style="margin-top:6px"><span>spent</span><b><span id="spent">0</span> / <span id="total">10</span></b></div>
+        <div class="kv" style="margin-top:6px"><span data-en="ε spent" data-tr="ε harcanan">ε spent</span><b><span id="spent">0</span> / <span id="total">10</span></b></div>
         <div class="ans">
-          <div class="box"><div class="lab">true (hidden)</div><div class="val true" id="vtrue">—</div></div>
-          <div class="box"><div class="lab">released (noisy)</div><div class="val noisy" id="vnoisy">—</div></div>
+          <div class="box"><div class="lab" data-en="true (secret)" data-tr="gerçek (gizli)">true (secret)</div><div class="val true" id="vtrue">—</div></div>
+          <div class="box"><div class="lab" data-en="released (noisy)" data-tr="yayınlanan (gürültülü)">released (noisy)</div><div class="val noisy" id="vnoisy">—</div></div>
         </div>
-        <div class="kv" style="margin-top:8px"><span>|error| this query</span><b id="verr">—</b></div>
-        <div class="kv"><span>ε_q this query</span><b id="veps">—</b></div>
+        <div class="kv" style="margin-top:8px"><span data-en="|error| this query" data-tr="|hata| bu sorgu">|error|</span><b id="verr">—</b></div>
+        <div class="kv"><span data-en="ε_q this query" data-tr="ε_q bu sorgu">ε_q</span><b id="veps">—</b></div>
       </div>
 
       <div class="card" style="margin-bottom:14px">
-        <h2>Workload state (the model in action)</h2>
-        <div class="kv"><span>queries seen</span><b id="qseen">0</b></div>
-        <div class="kv"><span>distinct templates u_k</span><b id="uk">0</b></div>
-        <div class="kv"><span>cache entries</span><b id="cache">0</b></div>
-        <div class="kv"><span>savings S(k)=1−u_k/k</span><b id="sav">0%</b></div>
-        <div class="kv" id="uhatrow"><span>predicted Û</span><b id="uhat">—</b></div>
-        <div class="kv" id="semrow"><span>L2 semantic hits</span><b id="sem">0</b></div>
-        <div class="kv" id="evrow"><span>stale evictions / clock t</span><b><span id="ev">0</span> / <span id="clk">0</span></b></div>
+        <h2 data-en="Workload state (the model at work)" data-tr="İş yükü durumu (model iş başında)">Workload state</h2>
+        <div class="kv"><span data-en="queries seen" data-tr="görülen sorgu">queries seen</span><b id="qseen">0</b></div>
+        <div class="kv"><span data-en="distinct templates u_k" data-tr="farklı şablon u_k">distinct templates u_k</span><b id="uk">0</b></div>
+        <div class="kv"><span data-en="cache entries" data-tr="önbellek girdisi">cache entries</span><b id="cache">0</b></div>
+        <div class="kv"><span data-en="free cache hits" data-tr="bedava isabet">free cache hits</span><b id="hits">0</b></div>
+        <div class="kv"><span data-en="savings (free / seen)" data-tr="tasarruf (bedava / görülen)">savings</span><b id="sav">0%</b></div>
+        <div class="kv" id="uhatrow"><span data-en="predicted Û" data-tr="tahmini Û">predicted Û</span><b id="uhat">—</b></div>
+        <div class="kv" id="semrow"><span data-en="L2 semantic hits" data-tr="L2 semantik isabet">L2 semantic hits</span><b id="sem">0</b></div>
+        <div class="kv" id="evrow"><span data-en="stale evictions / clock" data-tr="bayat tahliye / saat">stale evictions / clock</span><b><span id="ev">0</span> / <span id="clk">0</span></b></div>
       </div>
 
       <div class="card">
-        <h2>ε per query &amp; hit/miss timeline</h2>
+        <h2 data-en="ε per query &amp; hit/miss timeline" data-tr="sorgu başına ε &amp; isabet/ıska zaman çizelgesi">ε chart</h2>
         <div class="chart" id="chart"></div>
         <div class="tl" id="tl"></div>
       </div>
@@ -175,115 +221,183 @@
   </div>
 </div>
 
+<div class="scrim" id="scrim"></div>
+<aside class="drawer" id="drawer">
+  <header>
+    <svg class="ic" viewBox="0 0 24 24"><path d="M4 5a2 2 0 0 1 2-2h12v18H6a2 2 0 0 1-2-2z"/><path d="M8 7h7M8 11h7"/></svg>
+    <h3 data-en="Terminology" data-tr="Terminoloji">Terminology</h3>
+    <div class="spacer" style="flex:1"></div><span class="x" id="drawerx">✕</span>
+  </header>
+  <div class="body">
+    <input id="gsearch" type="text" data-en-ph="Search terms…" data-tr-ph="Terim ara…" placeholder="Search terms…">
+    <div id="glist"></div>
+  </div>
+</aside>
+
 <script>
 const $=id=>document.getElementById(id);
 const sleep=ms=>new Promise(r=>setTimeout(r,ms));
-let pending=null, pIdx=0;           // for step-by-step mode
+let LANG=localStorage.getItem('dpdemo_lang')||'en';
+let STEP_META={}, GLOSSARY=[], pending=null, pIdx=0, lastTrace=null;
+const ACC={ok:'blue',hit:'green',miss:'amber',reject:'red',error:'red'};
+const BADGE={ok:{en:'OK',tr:'OK'},hit:{en:'FREE HIT',tr:'BEDAVA'},miss:{en:'MISS',tr:'IŞKA'},reject:{en:'REJECT',tr:'RED'},error:{en:'ERROR',tr:'HATA'}};
+const MODES=[['predictive','predictive ε_q=B/Û'],['workload','workload-aware'],['semantic','semantic +L2'],['temporal','temporal τ/λ'],['naive','naive'],['exact','exact (no DP)']];
+const ICONS={
+ 0:'<circle cx="6" cy="8" r="2"/><path d="M9 8h11M4 16h7"/><circle cx="16" cy="16" r="2"/>',
+ 1:'<path d="M6 3h9l4 4v14H6z"/><path d="M9 13l2 2 4-4"/>',
+ 2:'<path d="M4 19l5-5 4 3 6-7"/><path d="M16 10h3v3"/>',
+ 3:'<path d="M7 12a5 5 0 0 1 10 0M9 20a8 8 0 0 1-2-7M12 22V12M15 20a8 8 0 0 0 2-5"/>',
+ 4:'<circle cx="12" cy="12" r="8"/><path d="M12 8v4l3 2"/>',
+ 5:'<ellipse cx="12" cy="6" rx="7" ry="3"/><path d="M5 6v6c0 1.6 3 3 7 3"/><circle cx="17" cy="16" r="3"/><path d="M19 18l2 2"/>',
+ 6:'<path d="M4 14a8 8 0 0 1 16 0"/><path d="M12 14l4-3"/>',
+ 7:'<rect x="3" y="6" width="18" height="13" rx="2"/><path d="M3 10h18M16 14h2"/>',
+ 8:'<path d="M3 12s3-7 9-7 9 7 9 7-3 7-9 7-9-7-9-7z"/><path d="M4 4l16 16"/>',
+ 9:'<path d="M3 12c2 0 2-5 4.5-5S10 17 12 17s2-10 4.5-10S19 12 21 12"/>',
+ 10:'<path d="M12 3v10M8 11l4 4 4-4"/><path d="M5 19h14"/>',
+ 11:'<rect x="6" y="3" width="12" height="18" rx="2"/><path d="M9 8h6M9 12h6"/><path d="M9 16l1.5 1.5L13 15"/>',
+};
+const t=o=>o?(o[LANG]||o.en):'';
 
-function cfg(){return{mode:$("mode").value,total_budget:+$("B").value,
-  eps_fixed:+$("epsf").value,k_total:+$("k").value,tau:+$("tau").value,lam:+$("lam").value};}
-
-function toggleModeUI(){
-  const m=$("mode").value;
-  document.querySelectorAll(".tmp").forEach(e=>e.style.display=m==="temporal"?"flex":"none");
-  $("uhatrow").style.display=m==="predictive"?"flex":"none";
-  $("semrow").style.display=m==="semantic"?"flex":"none";
-  $("evrow").style.display=m==="temporal"?"flex":"none";
+function applyLang(){
+  document.querySelectorAll('[data-en]').forEach(e=>{const v=e.getAttribute('data-'+LANG);if(v!=null)e.textContent=v;});
+  document.querySelectorAll('[data-en-ph]').forEach(e=>e.placeholder=e.getAttribute('data-'+LANG+'-ph'));
+  $('lang').querySelectorAll('button').forEach(b=>b.classList.toggle('on',b.dataset.l===LANG));
+  if(lastTrace) renderSteps(lastTrace,-1);
+  buildGlossary($('gsearch').value);
+  document.documentElement.lang=LANG;
 }
 
-async function reset(){
-  const r=await fetch("/api/reset",{method:"POST",headers:{"Content-Type":"application/json"},
-    body:JSON.stringify(cfg())}).then(x=>x.json());
-  $("steps").innerHTML=""; $("vtrue").textContent="—"; $("vnoisy").textContent="—";
-  $("verr").textContent="—"; $("veps").textContent="—";
-  applyState(r.state); drawChart(r.state);
+// glossary matching: find entry for a step-term name
+function matchTerm(name){
+  const n=name.toLowerCase().replace(/[()]/g,'').trim();
+  let best=null;
+  for(const g of GLOSSARY){const gt=g.term.toLowerCase();
+    if(gt===n||gt.includes(n)||n.includes(gt.split(' ')[0])){best=best||g;}
+    if(gt.includes(n)){return g;}}
+  // fallback: first significant word
+  const w=n.split(/[\s/]+/)[0];
+  return best||GLOSSARY.find(g=>g.term.toLowerCase().includes(w))||null;
 }
 
-function badge(s){const m={ok:"OK",hit:"HIT (free)",miss:"MISS",reject:"REJECT",error:"ERROR"};
-  return `<span class="badge b-${s}">${m[s]||s}</span>`;}
+function cfg(){return{mode:$('modechips').dataset.mode||'predictive',total_budget:+$('B').value,
+  eps_fixed:+$('epsf').value,k_total:+$('k').value,tau:+$('tau').value,lam:+$('lam').value};}
 
-function stepNode(s,on){
-  return `<div class="step s-${s.status} ${on?'on':'done'}" data-i="${s.id}">
-    <div class="num">${s.id}</div>
-    <div class="body"><div class="nm">${s.name}${badge(s.status)}</div>
-    <div class="dt">${s.detail||""}</div></div></div>`;}
+function toggleModeUI(){const m=$('modechips').dataset.mode;
+  document.querySelectorAll('.tmp').forEach(e=>e.style.display=m==='temporal'?'flex':'none');
+  $('uhatrow').style.display=m==='predictive'?'flex':'none';
+  $('semrow').style.display=m==='semantic'?'flex':'none';
+  $('evrow').style.display=m==='temporal'?'flex':'none';}
+
+function buildModes(){
+  $('modechips').innerHTML=MODES.map(([v,l])=>`<button data-m="${v}">${l}</button>`).join('');
+  $('modechips').dataset.mode='predictive';
+  $('modechips').querySelectorAll('button').forEach(b=>{
+    b.classList.toggle('on',b.dataset.m==='predictive');
+    b.onclick=()=>{$('modechips').dataset.mode=b.dataset.m;
+      $('modechips').querySelectorAll('button').forEach(x=>x.classList.toggle('on',x===b));
+      toggleModeUI();reset();};});
+}
+
+function stepCard(s,active){
+  const acc=ACC[s.status]||'blue';
+  const meta=STEP_META[s.id]||null;
+  const chips=(meta&&meta.terms||[]).map(nm=>{const g=matchTerm(nm);return g?`<span class="chip" data-term="${encodeURIComponent(g.term)}">${nm}</span>`:'';}).join('');
+  return `<div class="step s-${s.status} ${active?'on':'done'}" style="--accent:var(--${acc});--accent-bg:var(--${acc}-bg)">
+    <div class="step__icon"><svg class="ic" viewBox="0 0 24 24">${ICONS[s.id]||''}</svg></div>
+    <div class="step__body">
+      <div class="step__head"><span class="step__title">${s.name}</span><span class="badge">${t(BADGE[s.status])||s.status}</span></div>
+      <div class="step__tech mono">${s.detail||''}</div>
+      ${meta?`<div class="step__plain">${t(meta.plain)}</div>`:''}
+      ${meta&&meta.why?`<div class="step__why">${t(meta.why)}</div>`:''}
+      ${chips?`<div class="chips">${chips}</div>`:''}
+    </div></div>`;
+}
+function renderSteps(trace,activeIdx){
+  lastTrace=trace;
+  $('steps').innerHTML=trace.steps.map((s,j)=>stepCard(s,j===activeIdx)).join('');
+  $('steps').querySelectorAll('.chip').forEach(c=>c.onclick=()=>openGlossary(decodeURIComponent(c.dataset.term)));
+}
 
 function applyState(st){
-  $("total").textContent=st.budget_total; $("spent").textContent=st.budget_spent;
-  const pct=Math.min(100,100*st.budget_spent/st.budget_total);
-  $("bar").style.width=pct+"%"; $("barwrap").classList.toggle("full",pct>85);
-  $("qseen").textContent=st.queries_seen; $("uk").textContent=st.u_k;
-  $("cache").textContent=st.cache_size; $("sav").textContent=st.savings_pct+"%";
-  $("uhat").textContent=st.uhat==null?"—":st.uhat;
-  $("sem").textContent=st.semantic_hits; $("ev").textContent=st.expired_evictions;
-  $("clk").textContent=st.logical_time;
-  if(st.budget_remaining==null){$("total").textContent="—";$("spent").textContent="—(exact)";}
-  toggleModeUI();
+  if(st.budget_remaining==null){$('total').textContent='—';$('spent').textContent='— (exact)';$('bar').style.width='0';}
+  else{$('total').textContent=st.budget_total;$('spent').textContent=st.budget_spent;
+    const pct=Math.min(100,100*st.budget_spent/st.budget_total);$('bar').style.width=pct+'%';
+    $('barwrap').classList.toggle('full',pct>85);}
+  $('qseen').textContent=st.queries_seen;$('uk').textContent=st.u_k;$('cache').textContent=st.cache_size;
+  $('hits').textContent=st.cache_hits;$('sav').textContent=st.savings_pct+'%';
+  $('uhat').textContent=st.uhat==null?'—':st.uhat;$('sem').textContent=st.semantic_hits;
+  $('ev').textContent=st.expired_evictions;$('clk').textContent=st.logical_time;
 }
+const fmt=v=>typeof v==='number'?(Number.isInteger(v)?v:v.toFixed(2)):v;
 function applyFinal(f){
-  if(!f) return;
-  if(f.kind==="rejected"){$("vtrue").textContent="—";$("vnoisy").textContent="rejected";
-    $("verr").textContent="—";$("veps").textContent="0 (no budget)";return;}
-  $("vtrue").textContent=fmt(f.true); $("vnoisy").textContent=fmt(f.noisy);
-  $("vnoisy").style.color=f.kind==="l2_hit"?"var(--purple)":(f.kind==="exact"?"var(--dim)":"var(--green)");
-  $("verr").textContent=f.err==null?"—":f.err; $("veps").textContent=f.eps;
+  if(!f)return;
+  if(f.kind==='rejected'){$('vtrue').textContent='—';$('vnoisy').textContent=LANG==='tr'?'reddedildi':'rejected';$('verr').textContent='—';$('veps').textContent='0';return;}
+  $('vtrue').textContent=fmt(f.true);$('vnoisy').textContent=fmt(f.noisy);
+  $('vnoisy').style.color=f.kind==='l2_hit'?'var(--purple)':(f.kind==='exact'?'var(--dim)':'var(--green)');
+  $('verr').textContent=f.err==null?'—':f.err;$('veps').textContent=f.eps;
 }
-const fmt=v=>typeof v==="number"?(Number.isInteger(v)?v:v.toFixed(2)):v;
+function drawChart(st){const h=st.history||[];const mx=Math.max(.001,...h.map(x=>x.eps||0));
+  $('chart').innerHTML=h.map(x=>{const c=x.rejected?'reject':(x.l2?'l2':(x.hit?'hit':''));
+    const ht=x.hit?5:Math.max(4,70*(x.eps||0)/mx);
+    const tip=x.rejected?'rejected':(x.hit?(x.l2?'L2 semantic hit':'free hit'):`#${x.template} ε=${x.eps} |err|=${x.err}`);
+    return `<div class="bx ${c}" style="height:${ht}px" title="${tip}"></div>`;}).join('');
+  $('tl').innerHTML=h.map(x=>x.rejected?'<span style="color:var(--red)">✕</span>'
+    :(x.hit?(x.l2?'<span style="color:var(--purple)">◑</span>':'<span style="color:var(--green)">○</span>')
+    :'<span style="color:var(--blue)">●</span>')).join('');}
 
-function drawChart(st){
-  const h=(st.history||[]); const maxe=Math.max(0.001,...h.map(x=>x.eps||0));
-  $("chart").innerHTML=h.map(x=>{
-    const cls=x.rejected?"reject":(x.hit?"hit":"");
-    const ht=x.hit?5:Math.max(4,72*(x.eps||0)/maxe);
-    const tip=x.rejected?"rejected":(x.hit?`#${x.template} hit (free)`:`#${x.template}  ε=${x.eps}  |err|=${x.err}`);
-    return `<div class="bx ${cls}" style="height:${ht}px" title="${tip}"></div>`;}).join("");
-  $("tl").innerHTML=h.map(x=>x.rejected?'<span style="color:var(--red)">✕</span>'
-    :(x.hit?(x.l2?'<span style="color:var(--purple)" title="L2 semantic hit">◑</span>'
-      :'<span style="color:var(--green)">○</span>')
-      :'<span style="color:var(--blue)">●</span>')).join("");
-}
+async function animate(tr){const sp=+$('speed').value;
+  for(let i=0;i<tr.steps.length;i++){renderSteps(tr,i);if(i===tr.steps.length-1)applyFinal(tr.final);await sleep(sp);}
+  renderSteps(tr,-1);applyFinal(tr.final);applyState(tr.state);drawChart(tr.state);}
+function showStep(){renderSteps(pending,pIdx);
+  if(pIdx>=pending.steps.length-1){applyFinal(pending.final);applyState(pending.state);drawChart(pending.state);}}
 
-async function animate(trace){
-  $("steps").innerHTML="";
-  const sp=+$("speed").value;
-  for(let i=0;i<trace.steps.length;i++){
-    $("steps").innerHTML=trace.steps.map((s,j)=>stepNode(s,j===i)).join("");
-    if(trace.steps[i].status!=="error" && i===trace.steps.length-1) applyFinal(trace.final);
-    await sleep(sp);
-  }
-  $("steps").innerHTML=trace.steps.map(s=>stepNode(s,false)).join("");
-  applyFinal(trace.final); applyState(trace.state); drawChart(trace.state);
-}
-
-function showStep(){ // step-by-step mode renders up to pIdx
-  $("steps").innerHTML=pending.steps.map((s,j)=>stepNode(s,j===pIdx)).join("");
-  if(pIdx>=pending.steps.length-1){applyFinal(pending.final);applyState(pending.state);drawChart(pending.state);}
-}
-
+async function reset(){
+  const r=await fetch('/api/reset',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(cfg())}).then(x=>x.json());
+  $('steps').innerHTML='';lastTrace=null;['vtrue','vnoisy','verr','veps'].forEach(i=>$(i).textContent='—');
+  applyState(r.state);drawChart(r.state);}
 async function runQuery(sql){
-  const t=await fetch("/api/step",{method:"POST",headers:{"Content-Type":"application/json"},
-    body:JSON.stringify({sql})}).then(x=>x.json());
-  if(!t.ok && !t.steps){alert(t.error||"error");return;}
-  if($("stepmode").checked){pending=t;pIdx=0;$("next").style.display="";showStep();}
-  else{await animate(t);}
-  return t;
-}
+  const tr=await fetch('/api/step',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({sql})}).then(x=>x.json());
+  if(!tr.ok&&!tr.steps){alert(tr.error||'error');return;}
+  if($('stepmode').checked){pending=tr;pIdx=0;$('next').style.display='';showStep();}
+  else await animate(tr);
+  return tr;}
 
-$("run").onclick=()=>runQuery($("sql").value);
-$("reset").onclick=reset;
-$("mode").onchange=reset;
-$("next").onclick=()=>{if(!pending)return;pIdx++;if(pIdx>=pending.steps.length){
-  $("next").style.display="none";pending=null;return;}showStep();};
-document.querySelectorAll(".ex").forEach(b=>b.onclick=()=>{$("sql").value=b.textContent;runQuery(b.textContent);});
-document.querySelectorAll(".preset").forEach(b=>b.onclick=async()=>{
-  await reset();
-  const r=await fetch("/api/preset/"+encodeURIComponent(b.textContent)).then(x=>x.json());
-  const was=$("stepmode").checked;$("stepmode").checked=false;
-  for(const q of r.queries){$("sql").value=q;await runQuery(q);await sleep(180);}
-  $("stepmode").checked=was;
-});
+// glossary drawer
+function buildGlossary(filter){const q=(filter||'').toLowerCase();let html='',grp='';
+  GLOSSARY.forEach(g=>{const txt=(g.term+' '+t({en:g.def_en,tr:g.def_tr})).toLowerCase();
+    if(q&&!txt.includes(q))return;
+    if(g.group!==grp){grp=g.group;html+=`<div class="ggroup">${grp}</div>`;}
+    html+=`<div class="gitem" data-term="${encodeURIComponent(g.term)}"><div class="gt">${g.term}</div><div class="gd">${t({en:g.def_en,tr:g.def_tr})}</div></div>`;});
+  $('glist').innerHTML=html||`<div class="hint">${LANG==='tr'?'eşleşme yok':'no matches'}</div>`;}
+function openGlossary(term){$('scrim').classList.add('open');$('drawer').classList.add('open');
+  buildGlossary('');$('gsearch').value='';
+  if(term){const el=$('glist').querySelector(`[data-term="${CSS.escape(encodeURIComponent(term))}"]`);
+    if(el){el.scrollIntoView({block:'center'});el.classList.add('flash');setTimeout(()=>el.classList.remove('flash'),1000);}}}
+function closeGlossary(){$('scrim').classList.remove('open');$('drawer').classList.remove('open');}
+
+// wiring
+$('run').onclick=()=>runQuery($('sql').value);
+$('reset').onclick=reset;
+$('next').onclick=()=>{if(!pending)return;pIdx++;if(pIdx>=pending.steps.length){$('next').style.display='none';pending=null;return;}showStep();};
+$('glossaryBtn').onclick=()=>openGlossary();
+$('drawerx').onclick=closeGlossary;$('scrim').onclick=closeGlossary;
+$('gsearch').oninput=e=>buildGlossary(e.target.value);
+$('onbx').onclick=()=>$('onb').style.display='none';
+$('lang').querySelectorAll('button').forEach(b=>b.onclick=()=>{LANG=b.dataset.l;localStorage.setItem('dpdemo_lang',LANG);applyLang();});
+document.addEventListener('keydown',e=>{if(e.key==='Escape')closeGlossary();else if(e.key==='g'&&e.target.tagName!=='INPUT')openGlossary();});
+document.querySelectorAll('.ex').forEach(b=>b.onclick=()=>{$('sql').value=b.textContent;runQuery(b.textContent);});
+document.querySelectorAll('.preset').forEach(b=>b.onclick=async()=>{await reset();
+  const r=await fetch('/api/preset/'+encodeURIComponent(b.textContent)).then(x=>x.json());
+  const was=$('stepmode').checked;$('stepmode').checked=false;
+  for(const q of r.queries){$('sql').value=q;await runQuery(q);await sleep(160);}
+  $('stepmode').checked=was;});
+
 // init
-reset();
+(async()=>{
+  const c=await fetch('/api/content').then(x=>x.json());
+  STEP_META=c.steps;GLOSSARY=c.glossary;
+  buildModes();toggleModeUI();applyLang();await reset();
+})();
 </script>
 </body>
 </html>

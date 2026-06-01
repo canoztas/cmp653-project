@@ -1,0 +1,414 @@
+{
+ "steps": {
+  "0": {
+   "id": 0,
+   "title": {
+    "en": "Mode",
+    "tr": "Mod"
+   },
+   "plain": {
+    "en": "Selects which of the six pipelines to run for this query: exact (true answer, no privacy), naive (fixed epsilon every time, no cache), workload (fixed epsilon but exact repeats are free), semantic (adds an L2 similarity cache), temporal (workload plus staleness and update simulation), or predictive (epsilon set by the model as B over U-hat).",
+    "tr": "Bu sorgu icin alti hattan hangisinin calisacagini secer: exact (gercek cevap, gizlilik yok), naive (her seferinde sabit epsilon, onbellek yok), workload (sabit epsilon ama birebir tekrarlar bedava), semantic (benzerlik tabanli L2 onbellegi ekler), temporal (workload artisi bayatlik ve guncelleme benzetimi) ve predictive (epsilon, modelin B bolu U-sapka degerinden gelir)."
+   },
+   "why": {
+    "en": "The mode decides whether and how privacy budget is spent, so it sets the privacy-versus-accuracy trade-off for everything that follows.",
+    "tr": "Mod, gizlilik butcesinin harcanip harcanmayacagina ve nasil harcanacagina karar verir; boylece sonraki her adimdaki gizlilik-dogruluk dengesini belirler."
+   },
+   "terms": [
+    "Privacy budget",
+    "Privacy budget ε",
+    "Differential privacy (DP)"
+   ]
+  },
+  "1": {
+   "id": 1,
+   "title": {
+    "en": "Parse & validate",
+    "tr": "Ayristir ve dogrula"
+   },
+   "plain": {
+    "en": "Parses the SQL into a structured query and checks it against the supported subset, reading off the table, the aggregate(s) and their result-column positions, the WHERE filter, and any GROUP BY.",
+    "tr": "SQL'i yapisal bir sorguya cevirir ve desteklenen alt kume ile karsilastirip dogrular; tabloyu, kullanilan toplama islevlerini ve sonuc-sutun konumlarini, WHERE filtresini ve varsa GROUP BY'i okur."
+   },
+   "why": {
+    "en": "Only COUNT, SUM, AVG over one table with simple WHERE and GROUP BY are allowed; constructs like HAVING, JOINs, subqueries, or COUNT(DISTINCT) are rejected because their privacy cost cannot be safely accounted.",
+    "tr": "Yalnizca tek tablo uzerinde basit WHERE ve GROUP BY ile COUNT, SUM, AVG kabul edilir; HAVING, JOIN, alt sorgu veya COUNT(DISTINCT) gibi yapilar reddedilir cunku gizlilik maliyetleri guvenli bicimde hesaplanamaz."
+   },
+   "terms": [
+    "Template",
+    "Threat model",
+    "Sensitivity Δf"
+   ]
+  },
+  "2": {
+   "id": 2,
+   "title": {
+    "en": "Predictive allocate (pre-cache)",
+    "tr": "Ongorulu butce ayirma (onbellekten once)"
+   },
+   "plain": {
+    "en": "In predictive mode only, the allocator proposes this query's epsilon BEFORE touching the cache: during warmup it uses B over k, then it switches to epsilon_q = B over U-hat, where U-hat is the model's running estimate of how many distinct templates the whole workload will contain.",
+    "tr": "Yalnizca predictive modda, ayirici bu sorgunun epsilon'unu onbellege BAKMADAN ONCE onerir: isinma doneminde B bolu k kullanir, sonra epsilon_q = B bolu U-sapka'ya gecer; U-sapka, modelin tum is yukunun kac farkli sablon icerecegine dair gunbegun guncellenen tahminidir."
+   },
+   "why": {
+    "en": "Spreading the total budget B over the predicted number of unique releases (not over every query slot) targets the offline-optimal split, so accurate answers are not wasted on queries that will later be served free from cache.",
+    "tr": "Toplam butce B'yi her sorgu yerine ongorulen benzersiz yanit sayisina yaymak, cevrimdisi en iyi paylasimi hedefler; boylece sonradan onbellekten bedava donecek sorgulara dogruluk israf edilmez."
+   },
+   "terms": [
+    "Privacy budget ε",
+    "Template",
+    "u_k",
+    "Predict-then-allocate",
+    "Occupancy model"
+   ]
+  },
+  "3": {
+   "id": 3,
+   "title": {
+    "en": "Template + parameter hash",
+    "tr": "Sablon ve parametre ozeti"
+   },
+   "plain": {
+    "en": "Computes two fingerprints: a template hash that abstracts away the WHERE literals (capturing the query's shape) and a parameter hash of those literals; the template is flagged NEW or seen.",
+    "tr": "Iki parmak izi hesaplar: WHERE'deki sabit degerleri soyutlayip sorgunun seklini yakalayan bir sablon ozeti ve bu sabit degerlerin bir parametre ozeti; sablon NEW (yeni) ya da gorulmus olarak isaretlenir."
+   },
+   "why": {
+    "en": "An exact cache hit requires BOTH hashes to match, so identical repeats reuse a prior noisy answer while a changed filter value counts as a new query; this also drives the unique-template count the budget model is built on.",
+    "tr": "Birebir onbellek isabeti icin HER IKI ozetin de eslesmesi gerekir; boylece aynen tekrarlar onceki gurultulu cevabi yeniden kullanir, degisen bir filtre degeri ise yeni sorgu sayilir; bu ayni zamanda butce modelinin dayandigi benzersiz-sablon sayisini besler."
+   },
+   "terms": [
+    "Template",
+    "u_k",
+    "Occupancy model"
+   ]
+  },
+  "4": {
+   "id": 4,
+   "title": {
+    "en": "Temporal clock tick",
+    "tr": "Zamansal saat tiki"
+   },
+   "plain": {
+    "en": "In temporal mode, advances the logical clock by one step and simulates data updates at rate lambda, each of which can mark cache entries as invalidated; entries older than the staleness tolerance tau are then treated as stale.",
+    "tr": "Temporal modda, mantiksal saati bir adim ilerletir ve lambda hiziyla veri guncellemelerini benzetir; her guncelleme onbellek kayitlarini gecersiz olarak isaretleyebilir; bayatlik toleransi tau'dan eski kayitlar bayat sayilir."
+   },
+   "why": {
+    "en": "Real data changes over time, so this couples the budget to freshness: stale or update-invalidated cached answers must be re-noised (re-spending epsilon) instead of being reused.",
+    "tr": "Gercek veri zamanla degisir; bu adim butceyi tazelige baglar: bayatlamis ya da guncellemeyle gecersizlesmis onbellek cevaplari yeniden kullanilamaz, yeniden gurultulenmeli (epsilon yeniden harcanmali) olur."
+   },
+   "terms": [
+    "Privacy budget ε",
+    "Post-processing",
+    "Template"
+   ]
+  },
+  "5": {
+   "id": 5,
+   "title": {
+    "en": "Cache lookup",
+    "tr": "Onbellek sorgusu"
+   },
+   "plain": {
+    "en": "Looks for a reusable noisy answer in two tiers: L1 returns a result only when both the template and parameter hashes match exactly; in semantic mode an L2 tier then tries a tree-kernel/embedding similarity match. Naive mode skips the cache entirely.",
+    "tr": "Yeniden kullanilabilir gurultulu bir cevabi iki katmanda arar: L1 yalnizca sablon ve parametre ozetlerinin tamami eslestiginde sonuc doner; semantic modda L2 katmani ardindan agac-cekirdegi/gomme benzerligiyle eslesme dener. Naive mod onbellegi tumden atlar."
+   },
+   "why": {
+    "en": "A cache hit is returned for free by post-processing (zero added epsilon), but an L2 semantic hit is only similar, not provably equivalent, so it can return a subtly wrong answer; a miss means the query must spend budget.",
+    "tr": "Onbellek isabeti son-isleme sayesinde bedavadir (eklenen epsilon sifir); ancak L2 anlamsal isabet yalnizca benzerdir, kanitli olarak esdeger degildir, bu yuzden ince bicimde yanlis cevap dondurebilir; iskalama ise sorgunun butce harcamasi gerektigi anlamina gelir."
+   },
+   "terms": [
+    "Post-processing",
+    "Privacy budget ε",
+    "Template"
+   ]
+  },
+  "6": {
+   "id": 6,
+   "title": {
+    "en": "Sensitivity analysis",
+    "tr": "Duyarlilik analizi"
+   },
+   "plain": {
+    "en": "Computes each aggregate's global sensitivity Delta_f, how much one added or removed row can move the answer: COUNT is 1, SUM and AVG use the column's configured clipping bound B_c (AVG conservatively treated as a single release for a group of size one).",
+    "tr": "Her toplama islevinin kuresel duyarliligi Delta_f'i hesaplar, yani bir satir eklenip cikarildiginda cevabin en fazla ne kadar degisebilecegini: COUNT icin 1; SUM ve AVG icin sutunun tanimli kirpma siniri B_c (AVG ihtiyatli bicimde, tek kisilik bir grup gibi tek bir yayim olarak ele alinir)."
+   },
+   "why": {
+    "en": "Sensitivity sets the scale of the Laplace noise (Delta_f over epsilon), so getting it right is what makes the release actually private; out-of-scope cases (like SUM with no configured bound) are rejected here rather than under-noised.",
+    "tr": "Duyarlilik, Laplace gurultusunun olceginimi (Delta_f bolu epsilon) belirler; dogru hesaplanmasi yayimin gercekten gizli olmasini saglar; kapsam disi durumlar (ornegin siniri tanimlanmamis SUM) burada reddedilir, eksik gurultulenmek yerine."
+   },
+   "terms": [
+    "Sensitivity Δf",
+    "Laplace mechanism",
+    "Privacy budget ε"
+   ]
+  },
+  "7": {
+   "id": 7,
+   "title": {
+    "en": "Allocate budget (sequential composition)",
+    "tr": "Bütçeyi ayır (ardışık birleşim)"
+   },
+   "plain": {
+    "en": "The budget ledger charges this query's epsilon against the running total and records it, so consumed epsilon goes up and the remaining budget goes down. If the requested epsilon is larger than what is left, the query is rejected as budget-exhausted instead of being answered.",
+    "tr": "Bütçe defteri bu sorgunun epsilon'unu toplam harcamaya ekleyip kaydeder; böylece harcanan epsilon artar, kalan bütçe azalır. İstenen epsilon kalandan büyükse sorgu yanıtlanmaz, bütçe tükendi diye reddedilir."
+   },
+   "why": {
+    "en": "Sequential composition is the privacy accounting rule that says every released answer permanently spends part of a finite total, so the system must stop before that total is breached.",
+    "tr": "Ardışık birleşim, yayınlanan her yanıtın sınırlı bir toplamdan kalıcı olarak harcama yaptığını söyleyen mahremiyet muhasebesi kuralıdır; bu yüzden sistem toplam aşılmadan durmak zorundadır."
+   },
+   "terms": [
+    "Privacy budget",
+    "Epsilon",
+    "Sequential composition",
+    "Budget ledger",
+    "Budget exhausted"
+   ]
+  },
+  "8": {
+   "id": 8,
+   "title": {
+    "en": "Execute true query",
+    "tr": "Gerçek sorguyu çalıştır"
+   },
+   "plain": {
+    "en": "The exact, un-noised SQL is run against the real Adult census table to compute the true aggregate (a single value, or one value per group for GROUP BY). This true number is held internally and never shown to the analyst.",
+    "tr": "Gerçek, gürültüsüz SQL, doğru toplamı hesaplamak için asıl Adult nüfus tablosunda çalıştırılır (tek bir değer ya da GROUP BY için her grup için bir değer). Bu gerçek sayı içeride tutulur, analiste asla gösterilmez."
+   },
+   "why": {
+    "en": "The true answer is needed only as the seed to be perturbed; keeping it secret and releasing only the noised version is what protects any individual record in the table.",
+    "tr": "Gerçek yanıta yalnızca üzerine gürültü eklenecek bir tohum olarak ihtiyaç vardır; onu gizli tutup sadece gürültülü sürümü yayınlamak, tablodaki bireysel kayıtları koruyan şeydir."
+   },
+   "terms": [
+    "True query",
+    "Adult dataset",
+    "Aggregate query",
+    "GROUP BY"
+   ]
+  },
+  "9": {
+   "id": 9,
+   "title": {
+    "en": "Laplace mechanism",
+    "tr": "Laplace mekanizması"
+   },
+   "plain": {
+    "en": "The allocated epsilon is split equally across the aggregates (epsilon per aggregate = epsilon / number of aggregates), and Laplace noise of scale sensitivity/epsilon is added to each aggregate at its recorded SELECT column position; COUNT is rounded to a non-negative integer. For GROUP BY, every group is noised independently under parallel composition.",
+    "tr": "Ayrılan epsilon, toplam fonksiyonları arasında eşit bölünür (toplam başına epsilon = epsilon / toplam sayısı) ve her toplama, kaydedilmiş SELECT sütun konumunda, ölçeği duyarlılık/epsilon olan Laplace gürültüsü eklenir; COUNT negatif olmayan tam sayıya yuvarlanır. GROUP BY'da her grup, paralel birleşim altında bağımsız olarak gürültülenir."
+   },
+   "why": {
+    "en": "Calibrating noise to sensitivity and epsilon is exactly what makes the released answer differentially private; noising at the recorded position prevents accidentally releasing a true aggregate in the clear when columns are ordered unusually.",
+    "tr": "Gürültüyü duyarlılık ve epsilon'a göre ayarlamak, yayınlanan yanıtı diferansiyel mahrem yapan şeyin ta kendisidir; kaydedilmiş konumda gürültü eklemek, sütunlar olağandışı sıralandığında gerçek bir toplamı yanlışlıkla açıkça sızdırmayı önler."
+   },
+   "terms": [
+    "Laplace mechanism",
+    "Sensitivity",
+    "Epsilon per aggregate",
+    "Parallel composition",
+    "SELECT position",
+    "Post-processing"
+   ]
+  },
+  "10": {
+   "id": 10,
+   "title": {
+    "en": "Cache write",
+    "tr": "Önbelleğe yazma"
+   },
+   "plain": {
+    "en": "The noisy answer is stored in the ledger's cache keyed by the query's template hash and parameter hash (and also added to the semantic matcher in semantic mode). In naive mode nothing is cached.",
+    "tr": "Gürültülü yanıt, sorgunun şablon karması ve parametre karması anahtarıyla defterin önbelleğine kaydedilir (semantik modda ayrıca semantik eşleştiriciye de eklenir). Naive modda hiçbir şey önbelleğe alınmaz."
+   },
+   "why": {
+    "en": "Because re-using an already-noised result is post-processing and costs zero budget, caching lets an exact repeat of this query be answered later for free instead of spending epsilon again.",
+    "tr": "Zaten gürültülenmiş bir sonucu yeniden kullanmak son işleme sayıldığı ve sıfır bütçe harcadığı için, önbellekleme bu sorgunun birebir tekrarının daha sonra yeniden epsilon harcamadan, ücretsiz yanıtlanmasını sağlar."
+   },
+   "terms": [
+    "Cache write",
+    "Template hash",
+    "Parameter hash",
+    "Post-processing",
+    "Semantic matcher"
+   ]
+  },
+  "11": {
+   "id": 11,
+   "title": {
+    "en": "Predictive bookkeeping (re-estimate Û)",
+    "tr": "Öngörücü kayıt tutma (Û'yi yeniden tahmin et)"
+   },
+   "plain": {
+    "en": "In predictive mode only, the allocator records that this epsilon was actually spent and then re-estimates Û, the predicted number of distinct query templates in the whole workload, from the updated template-frequency history. This refreshed Û feeds the next query's per-query budget rule epsilon_q = B / Û.",
+    "tr": "Yalnızca öngörücü modda, ayırıcı bu epsilon'un gerçekten harcandığını kaydeder ve ardından, güncellenmiş şablon-sıklık geçmişinden, tüm iş yükündeki farklı sorgu şablonlarının öngörülen sayısı olan Û'yi yeniden tahmin eder. Bu tazelenmiş Û, bir sonraki sorgunun sorgu başına bütçe kuralı epsilon_q = B / Û'yi besler."
+   },
+   "why": {
+    "en": "Continuously re-estimating Û lets the allocator spread the fixed budget over the queries it predicts are still coming, keeping per-query epsilon near the offline-optimal split instead of a fixed guess.",
+    "tr": "Û'yi sürekli yeniden tahmin etmek, ayırıcının sabit bütçeyi hâlâ geleceğini öngördüğü sorgulara yaymasını sağlar; böylece sorgu başına epsilon, sabit bir tahmin yerine çevrimdışı en iyi paylaşıma yakın kalır."
+   },
+   "terms": [
+    "Predictive bookkeeping",
+    "Û (predicted unique templates)",
+    "Epsilon per query",
+    "Workload",
+    "Occupancy model"
+   ]
+  }
+ },
+ "glossary": [
+  {
+   "group": "Privacy primitives",
+   "term": "Differential privacy (DP)",
+   "def_en": "A formal guarantee that adding calibrated random noise to a query answer makes the presence or absence of any single record statistically hidden, so no individual's data can be reliably inferred from the released answer.",
+   "def_tr": "Bir sorgu sonucuna ayarlı rastgele gürültü ekleyerek tek bir kaydın veri kümesinde olup olmadığını istatistiksel olarak gizleyen ve böylece hiçbir bireyin bilgisinin sonuçtan güvenilir biçimde çıkarılamamasını sağlayan resmi bir gizlilik güvencesidir."
+  },
+  {
+   "group": "Privacy primitives",
+   "term": "Privacy budget ε (epsilon)",
+   "def_en": "The DP tuning knob for a single release: small ε means more privacy but noisier answers, large ε means more accurate but less private answers, and every non-cached query spends some ε from the finite total.",
+   "def_tr": "Tek bir yanıt için gizlilik ayar düğmesidir: küçük ε daha fazla gizlilik ama daha gürültülü yanıt, büyük ε daha doğru ama daha az gizli yanıt demektir; önbellekten gelmeyen her sorgu sınırlı toplamdan bir miktar ε harcar."
+  },
+  {
+   "group": "Privacy primitives",
+   "term": "Total budget B",
+   "def_en": "The fixed total amount of privacy budget (total ε) available for the whole session; once the sum of spent ε reaches B the system refuses further fresh queries, and the predictive mode divides B across expected unique queries as ε_q = B/Û.",
+   "def_tr": "Tüm oturum boyunca kullanılabilen sabit toplam gizlilik bütçesidir (toplam ε); harcanan ε toplamı B'ye ulaşınca sistem yeni sorguları reddeder ve öngörücü mod B'yi beklenen benzersiz sorgu sayısına bölerek ε_q = B/Û olarak dağıtır."
+  },
+  {
+   "group": "Privacy primitives",
+   "term": "Laplace mechanism (scale = Δf/ε)",
+   "def_en": "The noise step: it adds a random number drawn from a Laplace distribution whose spread (scale) equals sensitivity divided by epsilon (Δf/ε), so less budget or higher sensitivity produces noisier answers.",
+   "def_tr": "Gürültü adımıdır: yayılımı (ölçeği) duyarlılığın epsilona bölümüne (Δf/ε) eşit olan bir Laplace dağılımından rastgele bir sayı ekler; yani daha az bütçe veya daha yüksek duyarlılık daha gürültülü yanıt üretir."
+  },
+  {
+   "group": "Privacy primitives",
+   "term": "Sensitivity Δf",
+   "def_en": "How much one added or removed row can change a query's true answer in the worst case: for COUNT it is 1, and for SUM and AVG it is the configured per-column upper bound B_c on that column's values.",
+   "def_tr": "Bir satırın eklenmesinin veya çıkarılmasının sorgunun gerçek yanıtını en kötü durumda ne kadar değiştirebileceğidir: COUNT için 1, SUM ve AVG için ise o sütunun değerleri için yapılandırılmış sütun başına üst sınır B_c'dir."
+  },
+  {
+   "group": "Privacy primitives",
+   "term": "Sequential composition (ε_total = Σε_i)",
+   "def_en": "When several different answers are released, their privacy costs add up, so the budget ledger charges the running total ε_total = Σε_i and stops once it would exceed B.",
+   "def_tr": "Birden çok farklı yanıt yayımlandığında gizlilik maliyetleri toplanır; bu yüzden bütçe defteri toplam ε_total = Σε_i'yi yürütür ve bu toplam B'yi aşacağı noktada durur."
+  },
+  {
+   "group": "Privacy primitives",
+   "term": "Parallel composition (GROUP BY)",
+   "def_en": "In a GROUP BY query each row belongs to a disjoint group, and since one record affects only one group, noising all g groups independently costs the whole query only ε_q, not g·ε_q.",
+   "def_tr": "Bir GROUP BY sorgusunda her satır ayrık bir gruba aittir ve tek bir kayıt yalnızca bir grubu etkilediğinden, g grubun tümüne bağımsız gürültü eklemek sorguya g·ε_q değil yalnızca ε_q'ya mal olur."
+  },
+  {
+   "group": "Privacy primitives",
+   "term": "Post-processing",
+   "def_en": "Once an answer has been noised it can be reused or transformed for free, which is why returning a previously cached noisy answer for an identical query costs zero extra budget (Δε = 0).",
+   "def_tr": "Bir yanıt bir kez gürültülendikten sonra ücretsiz olarak yeniden kullanılabilir veya dönüştürülebilir; bu yüzden aynı sorgu için daha önce önbelleğe alınmış gürültülü yanıtı döndürmek hiç ek bütçe harcamaz (Δε = 0)."
+  },
+  {
+   "group": "Privacy primitives",
+   "term": "Neighbouring databases / tuple-level threat model",
+   "def_en": "Two databases are neighbours if they differ by exactly one row (one person's record added or removed), and the system's privacy guarantee is defined as bounding how much the released answer can change between any such pair.",
+   "def_tr": "İki veritabanı tam olarak bir satırda (bir kişinin kaydının eklenmesi veya çıkarılması) farklıysa komşu sayılır; sistemin gizlilik güvencesi, yayımlanan yanıtın böyle herhangi bir çift arasında ne kadar değişebileceğini sınırlamak olarak tanımlanır."
+  },
+  {
+   "group": "Workload model",
+   "term": "Query template",
+   "def_en": "The structural shape of a SQL query with its WHERE literal values stripped out and replaced by placeholders, so that two queries differing only in their WHERE constants count as the same template.",
+   "def_tr": "Bir SQL sorgusunun, WHERE icindeki sabit degerleri cikarilip yerine yer tutucu konulmus iskeleti; yalnizca WHERE sabitleri farkli olan iki sorgu ayni sablon sayilir."
+  },
+  {
+   "group": "Workload model",
+   "term": "template_hash (structural)",
+   "def_en": "A 16-char hash of the placeholder-normalized query that identifies its structure; the same template_hash means the queries have the same shape regardless of WHERE values.",
+   "def_tr": "WHERE sabitleri yer tutucuyla degistirilmis sorgunun 16 karakterlik ozeti; ayni template_hash, WHERE degerlerinden bagimsiz olarak ayni yapidaki sorgu demektir."
+  },
+  {
+   "group": "Workload model",
+   "term": "param_hash (exact instance)",
+   "def_en": "A 16-char hash of just the literal values inside the WHERE clause, capturing the specific parameters of one concrete query instance.",
+   "def_tr": "Yalnizca WHERE icindeki sabit degerlerin 16 karakterlik ozeti; tek bir somut sorgu ornegine ait parametreleri yakalar."
+  },
+  {
+   "group": "Workload model",
+   "term": "Exact match (template_hash + param_hash)",
+   "def_en": "An L1 cache hit requires BOTH the structural template_hash and the param_hash to match, meaning the incoming query is identical to a previously answered one.",
+   "def_tr": "L1 onbellek isabeti icin HEM yapisal template_hash HEM de param_hash eslesmelidir; bu, gelen sorgunun daha once yanitlanmis bir sorguyla birebir ayni oldugu anlamina gelir."
+  },
+  {
+   "group": "Workload model",
+   "term": "Distinct-template count u_k",
+   "def_en": "The number of distinct query TEMPLATES (WHERE-literals stripped) seen among k queries -- the central quantity the occupancy model predicts. Exact-repeat caching frees only identical (template+parameter) repeats, so the count of paid releases can be larger when parameters vary.",
+   "def_tr": "k sorgu icinde gorulen farkli sorgu SABLONU sayisi (WHERE sabitleri cikarilmis) -- doluluk modelinin tahmin ettigi temel buyukluk. Birebir-tekrar onbellegi yalnizca ayni (sablon+parametre) tekrarlari bedava yapar; parametreler degisince odenen yanit sayisi daha fazla olabilir."
+  },
+  {
+   "group": "Workload model",
+   "term": "Occupancy model E[u_k]=Σ(1−(1−p_i)^k)",
+   "def_en": "A closed-form (coupon-collector) prediction of the expected number of distinct templates after k queries, given each template i appears with probability p_i.",
+   "def_tr": "Her sablonun p_i olasilikla geldigi varsayimiyla, k sorgudan sonra beklenen farkli sablon sayisini veren kapali-form (kupon-toplayici) tahmini."
+  },
+  {
+   "group": "Workload model",
+   "term": "Savings S(k)=1−u_k/k",
+   "def_en": "The model's template-level budget saving from repetition: S(k)=0 means every template is new, near 1 means heavy repetition. The demo's displayed savings is the ACTUAL free-cache-hit fraction, which equals 1-u_k/k only when repeats are exact (same parameters).",
+   "def_tr": "Modelin sablon duzeyindeki tekrar tasarrufu: S(k)=0 her sablonun yeni olmasi, 1'e yakin yogun tekrar demektir. Demoda gosterilen tasarruf ise GERCEK bedava-onbellek-isabeti oranidir; bu yalnizca tekrarlar birebir (ayni parametre) oldugunda 1-u_k/k'ya esittir."
+  },
+  {
+   "group": "Caching & temporal",
+   "term": "L1 exact cache",
+   "def_en": "The first cache layer that returns a stored noisy answer for free only when the new query exactly matches a prior one (same template_hash AND param_hash).",
+   "def_tr": "Yeni sorgu onceki bir sorguyla birebir eslestiginde (ayni template_hash VE param_hash) saklanan gurultulu yaniti bedavaya donduren birinci onbellek katmani."
+  },
+  {
+   "group": "Caching & temporal",
+   "term": "L2 semantic cache",
+   "def_en": "A second cache layer (semantic mode only) that returns a stored answer when a new query is judged 'similar enough' to a cached one by a tree-kernel and embedding score, even without an exact hash match.",
+   "def_tr": "Yalnizca semantik modda calisan ikinci onbellek katmani; yeni sorgu, agac-cekirdegi ve gomme skoruyla onbellektekine yeterince benzer bulunursa, birebir hash eslesmesi olmasa da saklanan yaniti dondurur."
+  },
+  {
+   "group": "Caching & temporal",
+   "term": "Semantic similarity ≠ alpha-equivalence (honest negative)",
+   "def_en": "L2 accepts a match on similarity thresholds (tree-kernel ≥0.95 and embedding ≥0.98) rather than provable query equivalence, so it can return a cached answer for a query that is not truly the same and therefore give a WRONG result.",
+   "def_tr": "L2, sorgularin kesin olarak esdeger oldugunu kanitlamak yerine benzerlik esiklerine (agac-cekirdegi ≥0.95 ve gomme ≥0.98) gore eslesme kabul eder; bu yuzden aslinda ayni olmayan bir sorguya onbellekten yanit dondurup YANLIS sonuc verebilir."
+  },
+  {
+   "group": "Caching & temporal",
+   "term": "Cache eviction / invalidation",
+   "def_en": "Removing or marking a cached entry as unusable: in temporal mode an entry is evicted when it exceeds staleness tolerance τ (expired) or is invalidated by a simulated data update, after which it counts as a cache miss.",
+   "def_tr": "Bir onbellek girdisini kaldirma veya kullanilamaz isaretleme: temporal modda bir girdi, staleness toleransi τ'yi astiginda (suresi dolmus) ya da benzetilmis bir veri guncellemesiyle gecersizlestiginde tahliye edilir ve sonrasinda onbellek isabetsizligi sayilir."
+  },
+  {
+   "group": "Caching & temporal",
+   "term": "Staleness tolerance τ",
+   "def_en": "In temporal mode, the maximum logical age (in query ticks) a cached noisy answer may reach before it is treated as expired and re-computed, bounding how out-of-date a reused answer can be.",
+   "def_tr": "Temporal modda, onbellekteki gurultulu bir yanitin gecersiz sayilip yeniden hesaplanmadan once ulasabilecegi azami mantiksal yas (sorgu tiki cinsinden); yeniden kullanilan bir yanitin ne kadar eski olabilecegini sinirlar."
+  },
+  {
+   "group": "Caching & temporal",
+   "term": "Update rate λ",
+   "def_en": "In temporal mode, the per-tick probability that a simulated data update occurs; when it fires, each cached entry is invalidated with the update-invalidation probability, forcing fresh re-noising.",
+   "def_tr": "Temporal modda, her tikta benzetilmis bir veri guncellemesinin gerceklesme olasiligi; tetiklendiginde her onbellek girdisi, gecersizlestirme olasiligiyla iptal edilir ve yeniden gurultuleme zorunlu olur."
+  },
+  {
+   "group": "Predicting the budget",
+   "term": "Predictive allocator ε_q=B/Û",
+   "def_en": "Our model-driven rule: after a short warmup at eps_q=B/k_total, each fresh release gets eps_q = B / U-hat (total budget / predicted distinct templates). It returns eps=0 (rejecting the query) once the REMAINING budget falls below a small floor.",
+   "def_tr": "Model-gudumlu kuralimiz: kisa bir isinmadan (eps_q=B/k_total) sonra her yeni yanit eps_q = B / U-hat alir (toplam butce / tahmini farkli sablon). KALAN butce kucuk bir tabanin altina dusunce eps=0 dondurur (sorguyu reddeder)."
+  },
+  {
+   "group": "Predicting the budget",
+   "term": "Forecast Û",
+   "def_en": "The live estimate of how many distinct templates the whole workload will contain, computed online by the occupancy plug-in estimator from the templates seen so far; the predictive allocator sets eps_q = B / U-hat.",
+   "def_tr": "Tum is yukunun kac farkli sablon icerecaginin canli tahmini; simdiye dek gorulen sablonlardan doluluk plug-in tahmincisiyle cevrimici hesaplanir. Ongorucu tahsisci eps_q = B / U-hat secer."
+  },
+  {
+   "group": "Predicting the budget",
+   "term": "Warmup",
+   "def_en": "An initial phase (first max(min_warmup, warmup_fraction·k_total) queries) where the allocator ignores its forecast and uses the safe per-query split ε_q=B/k_total, so an early bad estimate cannot drain the budget.",
+   "def_tr": "Tahsis edicinin tahminini gormezden gelip guvenli ε_q=B/k_total bolmesini kullandigi baslangic asamasi (ilk max(min_warmup, warmup_fraction·k_total) sorgu); boylece erken yanlis bir tahmin butceyi tuketemez."
+  },
+  {
+   "group": "Predicting the budget",
+   "term": "Oracle ε_q=B/u_k",
+   "def_en": "The hypothetical best allocation that an offline planner could pick if the true distinct-template count u_k were known in advance; the predictive allocator's forecast Û aims to approach this ideal.",
+   "def_tr": "Gercek farkli sablon sayisi u_k onceden bilinseydi cevrimdisi bir planlayicinin secebilecegi varsayimsal en iyi tahsis; predictive tahsis edicinin Û tahmini bu ideale yaklasmayi hedefler."
+  }
+ ]
+}

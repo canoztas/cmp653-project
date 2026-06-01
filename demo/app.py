@@ -4,16 +4,19 @@ Run:  python demo/app.py     then open http://127.0.0.1:5000
 The server holds one workload session in memory (single-user local demo); the
 /api/reset endpoint starts a fresh ledger/cache/allocator.
 """
+import json
 import sys
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parent))
+HERE = Path(__file__).resolve().parent
+sys.path.insert(0, str(HERE))
 
 from flask import Flask, jsonify, render_template, request
 
 from pipeline import DemoSession, EXAMPLES, PRESETS
 
 app = Flask(__name__)
+CONTENT = json.loads((HERE / "content.json").read_text(encoding="utf-8"))
 
 # single in-memory session (local demo)
 SESSION = {"s": DemoSession()}
@@ -50,6 +53,11 @@ def step():
 @app.route("/api/preset/<name>")
 def preset(name):
     return jsonify({"ok": True, "queries": PRESETS.get(name, [])})
+
+
+@app.route("/api/content")
+def content():
+    return jsonify(CONTENT)
 
 
 if __name__ == "__main__":
