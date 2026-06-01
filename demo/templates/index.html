@@ -242,7 +242,7 @@
       <label class="fld">k <input type="number" id="k" value="20" step="1" min="1"></label>
       <label class="fld tmp">τ <input type="number" id="tau" value="2" step="1" min="1"></label>
       <label class="fld tmp">λ <input type="number" id="lam" value="0.5" step="0.1" min="0" max="1"></label>
-      <label class="fld" data-en="speed" data-tr="hız">speed <input type="range" id="speed" min="80" max="900" value="420"></label>
+      <label class="fld"><span data-en="speed" data-tr="hız">speed</span> <input type="range" id="speed" min="80" max="900" value="420"></label>
       <label class="fld"><input type="checkbox" id="stepmode"> <span data-en="step-by-step" data-tr="adım adım">step-by-step</span></label>
       <button class="btn ghost" id="next" style="display:none"><span data-en="Next ▶" data-tr="Sonraki ▶">Next ▶</span></button>
     </div>
@@ -343,7 +343,8 @@ const ICONS={
 const t=o=>o?(o[LANG]||o.en):'';
 
 function applyLang(){
-  document.querySelectorAll('[data-en]').forEach(e=>{const v=e.getAttribute('data-'+LANG);if(v!=null)e.textContent=v;});
+  // only touch LEAF elements — never overwrite an element that contains inputs/children
+  document.querySelectorAll('[data-en]').forEach(e=>{const v=e.getAttribute('data-'+LANG);if(v!=null&&e.childElementCount===0)e.textContent=v;});
   document.querySelectorAll('[data-en-ph]').forEach(e=>e.placeholder=e.getAttribute('data-'+LANG+'-ph'));
   $('lang').querySelectorAll('button').forEach(b=>b.classList.toggle('on',b.dataset.l===LANG));
   if(lastTrace){renderSteps(lastTrace);setActive(-1);}
@@ -455,7 +456,7 @@ function drawChart(st){const h=st.history||[];const mx=Math.max(.001,...h.map(x=
     :(x.hit?(x.l2?'<span style="color:var(--purple)">◑</span>':'<span style="color:var(--green)">○</span>')
     :'<span style="color:var(--blue)">●</span>')).join('');}
 
-async function animate(tr){const sp=+$('speed').value;
+async function animate(tr){const sp=+(($('speed')||{}).value||420);
   renderSteps(tr);
   for(let i=0;i<tr.steps.length;i++){setActive(i);if(i===tr.steps.length-1)applyFinal(tr.final);await sleep(sp);}
   setActive(-1);applyFinal(tr.final);applyState(tr.state);drawChart(tr.state);}

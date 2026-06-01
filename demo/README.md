@@ -16,6 +16,9 @@ python demo/app.py                # -> http://127.0.0.1:5000
 
 Open the URL in a browser.
 
+Optional headless smoke test of the run flow (catches JS regressions):
+`npm install jsdom && node demo/test_ui.js` (with the server running).
+
 ## The interface
 
 - **Plain-language explanations** under every step — what it does and why it
