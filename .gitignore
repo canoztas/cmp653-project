@@ -31,7 +31,7 @@ Thumbs.db
 data/*.duckdb
 data/*.duckdb.wal
 data/adult/
-results/
+results/*
 baselines/
 report/*.aux
 report/*.log
@@ -46,8 +46,10 @@ report/*.fdb_latexmk
 !results/.gitkeep
 # Canonical result CSVs the paper tables cite (small text -> committed as the artifact)
 !results/predictive/
+results/predictive/*
 !results/predictive/predictive_comparison.csv
 !results/predictive/predictive_stats.csv
 !results/predictors/
+results/predictors/*
 !results/predictors/predictor_comparison.csv
 !results/predictors/allocation_policy_comparison.csv
