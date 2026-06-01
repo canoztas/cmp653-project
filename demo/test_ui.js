@@ -29,7 +29,7 @@ const { JSDOM } = require('jsdom');
   const checks = [
     ['#speed present (not wiped by applyLang)', !!$('speed')],
     ['mode chips built', $('modechips').children.length === 6],
-    ['use cases rendered', $('usecases').children.length === 5],
+    ['use cases rendered', $('usecases').children.length >= 5],
   ];
   if ($('speed')) $('speed').value = '60';
   $('run').click();

@@ -159,11 +159,29 @@ class DPMiddleware:
                 error=str(e),
             )
 
-        # Execute true query
-        columns, true_rows = self.db.execute_with_columns(sql)
+        # Execute true query. For a top-k query (ORDER BY/LIMIT) we must fetch the
+        # FULL histogram and select on the NOISY counts: letting the DB apply
+        # ORDER BY/LIMIT would select the top-k on the TRUE counts, leaking which
+        # groups crossed the cutoff. Stripping them keeps the selection a pure
+        # post-processing of the noised result, so no extra budget is charged.
+        exec_sql = sql
+        if parsed.limit is not None:
+            base = parsed.ast.copy()
+            base.set("order", None)
+            base.set("limit", None)
+            exec_sql = base.sql(dialect="postgres")
+        columns, true_rows = self.db.execute_with_columns(exec_sql)
 
         # Add noise to each row's aggregate columns
         noisy_rows = self._add_noise(parsed, true_rows, sensitivities, allocated_eps)
+
+        # Top-k = post-processing on the noised result (ORDER BY noisy value, LIMIT k).
+        if parsed.limit is not None:
+            if parsed.order_by_position is not None:
+                noisy_rows = sorted(
+                    noisy_rows, key=lambda r: r[parsed.order_by_position],
+                    reverse=parsed.order_desc)
+            noisy_rows = noisy_rows[:parsed.limit]
 
         # Cache result
         if self.budget:

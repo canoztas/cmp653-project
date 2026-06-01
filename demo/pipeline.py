@@ -252,25 +252,45 @@ class DemoSession:
                            f"/{self.B:g} | remaining {b.remaining:.3f}"))
 
         # (8) EXECUTE TRUE ----------------------------------------------
-        cols, true_rows = mw.db.execute_with_columns(sql)
+        # top-k: fetch the FULL histogram (strip ORDER BY/LIMIT) so selection
+        # happens on the NOISY counts, not the true ones (else the set leaks).
+        exec_sql = sql
+        if parsed.limit is not None:
+            base = parsed.ast.copy()
+            base.set("order", None)
+            base.set("limit", None)
+            exec_sql = base.sql(dialect="postgres")
+        cols, true_rows = mw.db.execute_with_columns(exec_sql)
         true_disp = self._disp(parsed, true_rows)
         steps.append(_step(8, "Execute true query", "ok",
-                           f"on real Adult table → true = {true_disp} (kept secret)"))
+                           (f"top-k: fetch ALL {len(true_rows)} groups (strip ORDER BY/LIMIT) → "
+                            if parsed.limit is not None else "on real Adult table → ")
+                           + f"true = {true_disp} (kept secret)"))
 
         # (9) LAPLACE MECHANISM (real _add_noise: per-position) ----------
-        noisy_rows = mw._add_noise(parsed, true_rows, sens, allocated)
+        noisy_full = mw._add_noise(parsed, true_rows, sens, allocated)
+        pos = parsed.aggregates[0].position
         eps_per = allocated / max(len(sens), 1)
-        noisy_disp = self._disp(parsed, noisy_rows)
+        # |error| over the FULL noised histogram (the actual noise added), before top-k truncation
         if parsed.group_by:
-            err = sum(abs(float(n[parsed.aggregates[0].position]) - float(t[parsed.aggregates[0].position]))
-                      for t, n in zip(true_rows, noisy_rows)) / max(len(true_rows), 1)
+            err = sum(abs(float(n[pos]) - float(t[pos]))
+                      for t, n in zip(true_rows, noisy_full)) / max(len(true_rows), 1)
         else:
-            err = abs(float(noisy_rows[0][parsed.aggregates[0].position]) -
-                      float(true_rows[0][parsed.aggregates[0].position]))
+            err = abs(float(noisy_full[0][pos]) - float(true_rows[0][pos]))
         steps.append(_step(9, "Laplace mechanism", "ok",
                            f"per-agg ε={eps_per:.3f}, scale Δf/ε; noised at the recorded "
-                           f"SELECT position (groups: parallel composition) → "
-                           f"noisy = {noisy_disp}  |err|={err:.2f}"))
+                           f"SELECT position (groups: parallel composition)  |err|={err:.2f}"))
+        # top-k = post-processing: sort by NOISY value, take k (free)
+        noisy_rows = noisy_full
+        if parsed.limit is not None:
+            if parsed.order_by_position is not None:
+                noisy_rows = sorted(noisy_full, key=lambda r: r[parsed.order_by_position],
+                                    reverse=parsed.order_desc)
+            noisy_rows = noisy_rows[:parsed.limit]
+            steps.append(_step(12, "Top-k post-processing", "ok",
+                               f"ORDER BY noisy value, LIMIT {parsed.limit} → top-{parsed.limit} "
+                               f"of {len(noisy_full)} groups, FREE (post-processing, Δε=0)"))
+        noisy_disp = self._disp(parsed, noisy_rows)
 
         # (10) CACHE WRITE ----------------------------------------------
         b.store_result(parsed, cols, noisy_rows, allocated)
@@ -378,6 +398,28 @@ USE_CASES = [
                   "bedeli var — saatin işleyişini ve bayat girdilerin tahliyesini izle."},
         "mode": "temporal",
         "queries": [_TILE_A] * 7,
+    },
+    {
+        "id": "topk",
+        "name": {"en": "Top-k leaderboard", "tr": "Top-k sıralama"},
+        "tag": {"en": "ORDER BY noisy + LIMIT → free", "tr": "gürültülü ORDER BY + LIMIT → bedava"},
+        "desc": {
+            "en": "A 'top 5 categories' leaderboard, refreshed. Top-k noises the FULL "
+                  "histogram (cost ε, parallel composition) then sorts by the NOISY "
+                  "counts and keeps k — pure post-processing, so it is FREE on top of "
+                  "the GROUP BY and free again on every exact repeat. Selecting on the "
+                  "true counts would leak which groups crossed the cutoff, so we don't.",
+            "tr": "Bir 'top 5 kategori' sıralaması, yenilenen. Top-k TÜM histogramı "
+                  "gürültüler (maliyet ε, paralel kompozisyon), sonra GÜRÜLTÜLÜ sayılara "
+                  "göre sıralayıp k'yı tutar — saf post-processing, yani GROUP BY üstüne "
+                  "BEDAVA ve her birebir tekrarda yine bedava. Gerçek sayılara göre seçmek "
+                  "hangi grupların eşiği geçtiğini sızdırırdı, o yüzden yapmıyoruz."},
+        "mode": "predictive",
+        "queries": [
+            "SELECT education, COUNT(*) AS c FROM adult GROUP BY education ORDER BY c DESC LIMIT 5",
+            "SELECT education, COUNT(*) AS c FROM adult GROUP BY education ORDER BY c DESC LIMIT 5",
+            "SELECT workclass, COUNT(*) AS c FROM adult GROUP BY workclass ORDER BY c DESC LIMIT 3",
+        ],
     },
     {
         "id": "semantic",
