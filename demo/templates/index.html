@@ -150,10 +150,6 @@
   .modechips button:hover{border-color:var(--line2);color:var(--txt)}
   .modechips button.on{box-shadow:0 0 0 1px var(--blue),0 3px 12px rgba(68,147,248,.28)}
   /* steps */
-  .step{animation:rise .35s ease both}
-  @keyframes rise{from{opacity:0;transform:translateY(5px)}to{opacity:var(--o,1);transform:none}}
-  .step.on,.step.done{--o:1}
-  .step:not(.on):not(.done){--o:.4}
   .step__icon{transition:.25s cubic-bezier(.2,.7,.2,1)}
   .step.on .step__icon{background:linear-gradient(135deg,var(--accent),color-mix(in srgb,var(--accent) 55%,#000));
     color:#fff;border-color:var(--accent);transform:scale(1.06);animation:pulse 1.4s ease-in-out infinite}
@@ -196,6 +192,21 @@
   ::-webkit-scrollbar-thumb{background:var(--line2);border-radius:10px;border:2px solid var(--bg)}
   ::-webkit-scrollbar-thumb:hover{background:#4a586a}
   @media(prefers-reduced-motion:reduce){*{animation:none!important}}
+  /* use cases */
+  .ucrow{display:flex;flex-wrap:wrap;gap:8px;flex:1}
+  .uc{text-align:left;background:linear-gradient(180deg,rgba(255,255,255,.02),transparent),#0b0f14;
+    border:1px solid var(--line2);border-radius:10px;padding:8px 11px;cursor:pointer;
+    width:188px;transition:.15s;position:relative}
+  .uc:hover{border-color:var(--blue);transform:translateY(-2px);box-shadow:0 6px 16px -8px rgba(0,0,0,.6)}
+  .uc.on{border-color:var(--blue);box-shadow:0 0 0 1px var(--blue)}
+  .uc .ucn{font-weight:650;font-size:12px;display:flex;align-items:center;gap:6px}
+  .uc .ucn i{width:7px;height:7px;border-radius:50%;background:var(--accent,var(--blue));flex:none}
+  .uc .uct{font-size:10px;color:var(--dim);margin-top:3px;line-height:1.35}
+  .ucdesc{display:none;margin-top:2px;padding:11px 13px;border-radius:10px;
+    background:var(--blue-bg);border:1px solid var(--blue);font-size:12.5px;color:var(--txt);
+    animation:popin .35s ease}
+  .ucdesc.show{display:block}
+  .ucdesc b{color:var(--blue)}
 </style>
 </head>
 <body>
@@ -239,11 +250,11 @@
       <span class="fld" data-en="Examples:" data-tr="Örnekler:">Examples:</span>
       {% for ex in examples %}<button class="btn ghost ex">{{ ex }}</button>{% endfor %}
     </div>
-    <div class="row pills">
-      <span class="fld" data-en="Workloads:" data-tr="İş yükleri:">Workloads:</span>
-      {% for p in presets %}<button class="btn ghost preset">{{ p }}</button>{% endfor %}
-      <span class="hint" data-en="↑ a sequence — watch the budget deplete &amp; repeats go free" data-tr="↑ bir dizi — bütçenin erimesini &amp; tekrarların bedava olmasını izleyin">↑ a sequence…</span>
+    <div class="row" style="align-items:flex-start">
+      <span class="fld" style="padding-top:7px" data-en="Use cases:" data-tr="Senaryolar:">Use cases:</span>
+      <div id="usecases" class="ucrow"></div>
     </div>
+    <div id="ucdesc" class="ucdesc"></div>
   </div>
 
   <div class="grid">
@@ -335,7 +346,8 @@ function applyLang(){
   document.querySelectorAll('[data-en]').forEach(e=>{const v=e.getAttribute('data-'+LANG);if(v!=null)e.textContent=v;});
   document.querySelectorAll('[data-en-ph]').forEach(e=>e.placeholder=e.getAttribute('data-'+LANG+'-ph'));
   $('lang').querySelectorAll('button').forEach(b=>b.classList.toggle('on',b.dataset.l===LANG));
-  if(lastTrace) renderSteps(lastTrace,-1);
+  if(lastTrace){renderSteps(lastTrace);setActive(-1);}
+  if(USE_CASES.length)renderUseCases();
   buildGlossary($('gsearch').value);
   document.documentElement.lang=LANG;
 }
@@ -371,11 +383,11 @@ function buildModes(){
       toggleModeUI();reset();};});
 }
 
-function stepCard(s,active){
+function stepCard(s){
   const acc=ACC[s.status]||'blue';
   const meta=STEP_META[s.id]||null;
   const chips=(meta&&meta.terms||[]).map(nm=>{const g=matchTerm(nm);return g?`<span class="chip" data-term="${encodeURIComponent(g.term)}">${nm}</span>`:'';}).join('');
-  return `<div class="step s-${s.status} ${active?'on':'done'}" style="--accent:var(--${acc});--accent-bg:var(--${acc}-bg)">
+  return `<div class="step s-${s.status}" style="--accent:var(--${acc});--accent-bg:var(--${acc}-bg)">
     <div class="step__icon"><svg class="ic" viewBox="0 0 24 24">${ICONS[s.id]||''}</svg></div>
     <div class="step__body">
       <div class="step__head"><span class="step__title">${s.name}</span><span class="badge">${t(BADGE[s.status])||s.status}</span></div>
@@ -385,10 +397,18 @@ function stepCard(s,active){
       ${chips?`<div class="chips">${chips}</div>`:''}
     </div></div>`;
 }
-function renderSteps(trace,activeIdx){
+// render the cards ONCE (no per-frame rebuild → no flicker); the active step is
+// then just a class toggle.
+function renderSteps(trace){
   lastTrace=trace;
-  $('steps').innerHTML=trace.steps.map((s,j)=>stepCard(s,j===activeIdx)).join('');
+  $('steps').innerHTML=trace.steps.map(stepCard).join('');
   $('steps').querySelectorAll('.chip').forEach(c=>c.onclick=()=>openGlossary(decodeURIComponent(c.dataset.term)));
+}
+function setActive(i){
+  $('steps').querySelectorAll('.step').forEach((c,j)=>{
+    c.classList.toggle('on',j===i);
+    c.classList.toggle('done',i<0?true:j<i);
+  });
 }
 
 function applyState(st){
@@ -436,10 +456,11 @@ function drawChart(st){const h=st.history||[];const mx=Math.max(.001,...h.map(x=
     :'<span style="color:var(--blue)">●</span>')).join('');}
 
 async function animate(tr){const sp=+$('speed').value;
-  for(let i=0;i<tr.steps.length;i++){renderSteps(tr,i);if(i===tr.steps.length-1)applyFinal(tr.final);await sleep(sp);}
-  renderSteps(tr,-1);applyFinal(tr.final);applyState(tr.state);drawChart(tr.state);}
-function showStep(){renderSteps(pending,pIdx);
-  if(pIdx>=pending.steps.length-1){applyFinal(pending.final);applyState(pending.state);drawChart(pending.state);}}
+  renderSteps(tr);
+  for(let i=0;i<tr.steps.length;i++){setActive(i);if(i===tr.steps.length-1)applyFinal(tr.final);await sleep(sp);}
+  setActive(-1);applyFinal(tr.final);applyState(tr.state);drawChart(tr.state);}
+function showStep(){if(pIdx===0)renderSteps(pending);setActive(pIdx);
+  if(pIdx>=pending.steps.length-1){setActive(-1);applyFinal(pending.final);applyState(pending.state);drawChart(pending.state);}}
 
 async function reset(){
   const r=await fetch('/api/reset',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(cfg())}).then(x=>x.json());
@@ -476,17 +497,37 @@ $('onbx').onclick=()=>$('onb').style.display='none';
 $('lang').querySelectorAll('button').forEach(b=>b.onclick=()=>{LANG=b.dataset.l;localStorage.setItem('dpdemo_lang',LANG);applyLang();});
 document.addEventListener('keydown',e=>{if(e.key==='Escape')closeGlossary();else if(e.key==='g'&&e.target.tagName!=='INPUT')openGlossary();});
 document.querySelectorAll('.ex').forEach(b=>b.onclick=()=>{$('sql').value=b.textContent;runQuery(b.textContent);});
-document.querySelectorAll('.preset').forEach(b=>b.onclick=async()=>{await reset();
-  const r=await fetch('/api/preset/'+encodeURIComponent(b.textContent)).then(x=>x.json());
+// use cases
+let USE_CASES=[],activeUC=null;
+const UC_ACC={predictive:'blue',workload:'green',temporal:'amber',semantic:'purple',naive:'red',exact:'faint'};
+function pickMode(m){$('modechips').dataset.mode=m;
+  $('modechips').querySelectorAll('button').forEach(x=>x.classList.toggle('on',x.dataset.m===m));
+  toggleModeUI();}
+function renderUseCases(){
+  $('usecases').innerHTML=USE_CASES.map((u,i)=>
+    `<div class="uc${activeUC===i?' on':''}" data-i="${i}" style="--accent:var(--${UC_ACC[u.mode]||'blue'})">
+      <div class="ucn"><i></i>${t(u.name)}</div><div class="uct">${t(u.tag)}</div></div>`).join('');
+  $('usecases').querySelectorAll('.uc').forEach(c=>c.onclick=()=>runUseCase(+c.dataset.i));
+  if(activeUC!=null&&USE_CASES[activeUC]){
+    const u=USE_CASES[activeUC];$('ucdesc').innerHTML=`<b>${t(u.name)}</b> — ${t(u.desc)}`;}
+}
+async function runUseCase(i){
+  const u=USE_CASES[i];activeUC=i;
+  $('usecases').querySelectorAll('.uc').forEach(x=>x.classList.toggle('on',+x.dataset.i===i));
+  pickMode(u.mode);
+  $('ucdesc').innerHTML=`<b>${t(u.name)}</b> — ${t(u.desc)}`;$('ucdesc').className='ucdesc show';
+  await reset();
   const was=$('stepmode').checked;$('stepmode').checked=false;
-  for(const q of r.queries){$('sql').value=q;await runQuery(q);await sleep(160);}
-  $('stepmode').checked=was;});
+  for(const q of u.queries){$('sql').value=q;await runQuery(q);await sleep(170);}
+  $('stepmode').checked=was;
+}
 
 // init
 (async()=>{
   const c=await fetch('/api/content').then(x=>x.json());
   STEP_META=c.steps;GLOSSARY=c.glossary;
-  buildModes();toggleModeUI();applyLang();await reset();
+  try{USE_CASES=(await fetch('/api/usecases').then(x=>x.json())).use_cases||[];}catch(e){USE_CASES=[];}
+  buildModes();toggleModeUI();renderUseCases();applyLang();await reset();
 })();
 </script>
 </body>

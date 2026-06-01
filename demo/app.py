@@ -13,7 +13,7 @@ sys.path.insert(0, str(HERE))
 
 from flask import Flask, jsonify, render_template, request
 
-from pipeline import DemoSession, EXAMPLES, PRESETS
+from pipeline import DemoSession, EXAMPLES, PRESETS, USE_CASES
 
 app = Flask(__name__)
 CONTENT = json.loads((HERE / "content.json").read_text(encoding="utf-8"))
@@ -58,6 +58,11 @@ def preset(name):
 @app.route("/api/content")
 def content():
     return jsonify(CONTENT)
+
+
+@app.route("/api/usecases")
+def usecases():
+    return jsonify({"use_cases": USE_CASES})
 
 
 if __name__ == "__main__":

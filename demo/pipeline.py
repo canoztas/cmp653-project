@@ -291,21 +291,124 @@ class DemoSession:
                 "state": self._state()}
 
 
-PRESETS = {
-    "W1 Repetitive (dashboard tile)": [
-        "SELECT COUNT(*) FROM adult WHERE age >= 30"] * 8,
-    "W2 Parametric sweep (age bands)": [
-        f"SELECT COUNT(*) FROM adult WHERE age >= {a} AND age < {a+10}"
-        for a in (20, 30, 40, 30, 20, 50, 30, 20)],
-    "W4 Drill-down (all unique)": [
-        "SELECT COUNT(*) FROM adult",
-        "SELECT COUNT(*) FROM adult WHERE age >= 30",
-        "SELECT COUNT(*) FROM adult WHERE age >= 30 AND sex = ' Male'",
-        "SELECT AVG(age) FROM adult WHERE sex = ' Male'",
-        "SELECT SUM(capital_gain) FROM adult WHERE age >= 50",
-        "SELECT COUNT(*) FROM adult WHERE education = ' Doctorate'",
-    ],
-}
+_TILE_A = "SELECT COUNT(*) FROM adult WHERE age >= 30"
+_TILE_B = "SELECT AVG(age) FROM adult WHERE sex = ' Male'"
+_TILE_C = "SELECT COUNT(*) FROM adult WHERE education = ' Bachelors'"
+
+# Real-world use cases, each demonstrating one behaviour of the cache mechanism.
+USE_CASES = [
+    {
+        "id": "dashboard",
+        "name": {"en": "Live monitoring dashboard",
+                 "tr": "Canlı izleme panosu"},
+        "tag": {"en": "exact repeats → free", "tr": "birebir tekrar → bedava"},
+        "desc": {
+            "en": "A clinic dashboard refreshes the same KPI tiles again and again. "
+                  "Identical queries are EXACT repeats, so every repeat is a free "
+                  "cache hit (Δε=0) by post-processing — the budget is spent only "
+                  "once per distinct tile. Best case for caching: savings approach 1.",
+            "tr": "Bir klinik panosu aynı KPI kutucuklarını tekrar tekrar yeniler. "
+                  "Birebir aynı sorgular EXACT tekrardır; post-processing sayesinde "
+                  "her tekrar bedava önbellek isabetidir (Δε=0) — bütçe her farklı "
+                  "kutucuk için yalnızca bir kez harcanır. Caching için en iyi durum."},
+        "mode": "predictive",
+        "queries": [_TILE_A, _TILE_B, _TILE_C, _TILE_A, _TILE_B, _TILE_A, _TILE_C, _TILE_B],
+    },
+    {
+        "id": "parametric",
+        "name": {"en": "Parametric BI report sweep",
+                 "tr": "Parametrik BI rapor taraması"},
+        "tag": {"en": "template ≠ exact → partial savings",
+                "tr": "şablon ≠ birebir → kısmi tasarruf"},
+        "desc": {
+            "en": "An analyst runs one report TEMPLATE across many filter values "
+                  "(age bands). All share a template, but the cache frees only EXACT "
+                  "(template+parameter) repeats — so a brand-new band is a paid miss. "
+                  "Watch u_k stay 1 while real savings are far below 1−1/k.",
+            "tr": "Bir analist tek bir rapor ŞABLONUNU birçok filtre değeriyle "
+                  "(yaş bantları) çalıştırır. Hepsi aynı şablonu paylaşır ama önbellek "
+                  "yalnızca BİREBİR (şablon+parametre) tekrarları bedava yapar — yeni "
+                  "bir bant ödenen bir ıskadır. u_k=1 kalırken gerçek tasarruf "
+                  "1−1/k'nın çok altında."},
+        "mode": "workload",
+        "queries": [f"SELECT COUNT(*) FROM adult WHERE age >= {a} AND age < {a+10}"
+                    for a in (20, 30, 40, 30, 20, 50, 30)],
+    },
+    {
+        "id": "drilldown",
+        "name": {"en": "Investigative drill-down",
+                 "tr": "Araştırmacı drill-down"},
+        "tag": {"en": "all unique → no savings", "tr": "hepsi farklı → tasarruf yok"},
+        "desc": {
+            "en": "An analyst narrows a question step by step, each query adding a "
+                  "predicate. Every query is unique, so the cache never helps: "
+                  "S(k)=0 and the budget drains like naive composition. The model "
+                  "predicts this honestly — and it is the regime where reconstruction "
+                  "attacks succeed, so spend ε carefully.",
+            "tr": "Bir analist soruyu adım adım daraltır; her sorgu bir koşul ekler. "
+                  "Her sorgu farklı olduğundan önbellek hiç işe yaramaz: S(k)=0 ve "
+                  "bütçe naive gibi erir. Model bunu dürüstçe öngörür — ve reconstruction "
+                  "saldırılarının başarılı olduğu rejim budur, ε'yu dikkatli harca."},
+        "mode": "predictive",
+        "queries": [
+            "SELECT COUNT(*) FROM adult",
+            "SELECT COUNT(*) FROM adult WHERE age >= 30",
+            "SELECT COUNT(*) FROM adult WHERE age >= 30 AND sex = ' Male'",
+            "SELECT AVG(age) FROM adult WHERE sex = ' Male'",
+            "SELECT SUM(capital_gain) FROM adult WHERE age >= 50",
+            "SELECT COUNT(*) FROM adult WHERE education = ' Doctorate'",
+        ],
+    },
+    {
+        "id": "temporal",
+        "name": {"en": "Periodic report on changing data",
+                 "tr": "Değişen veride periyodik rapor"},
+        "tag": {"en": "staleness τ / updates λ → re-spend",
+                "tr": "bayatlama τ / güncelleme λ → yeniden harca"},
+        "desc": {
+            "en": "The same report re-runs over time, but the data keeps changing. "
+                  "A cached answer is only valid until it goes stale (tolerance τ) or "
+                  "an update invalidates it (rate λ); then it must be re-released, "
+                  "re-spending budget. Freshness has a price — watch the clock tick "
+                  "and stale entries get evicted.",
+            "tr": "Aynı rapor zamanla yeniden çalışır ama veri sürekli değişir. "
+                  "Önbellekteki cevap yalnızca bayatlayana (tolerans τ) ya da bir "
+                  "güncelleme onu geçersiz kılana (oran λ) kadar geçerlidir; sonra "
+                  "yeniden yayınlanmalı, bütçe tekrar harcanmalıdır. Tazeliğin bir "
+                  "bedeli var — saatin işleyişini ve bayat girdilerin tahliyesini izle."},
+        "mode": "temporal",
+        "queries": [_TILE_A] * 7,
+    },
+    {
+        "id": "semantic",
+        "name": {"en": "Near-duplicate queries",
+                 "tr": "Neredeyse-aynı sorgular"},
+        "tag": {"en": "similarity ≠ equivalence (honest negative)",
+                "tr": "benzerlik ≠ denklik (dürüst negatif)"},
+        "desc": {
+            "en": "Analysts often write the same logical query in slightly different "
+                  "ways. The L2 semantic cache TRIES to reuse a 'similar enough' answer "
+                  "— but similar ASTs are not equivalent queries, so it can return a "
+                  "WRONG answer. This is our honest negative: a semantic DP cache is "
+                  "unsafe without a symbolic equivalence prover. (L2 fires only if the "
+                  "embedding model is installed.)",
+            "tr": "Analistler aynı mantıksal sorguyu çoğu zaman biraz farklı yazar. "
+                  "L2 semantik önbellek 'yeterince benzer' bir cevabı yeniden kullanmayı "
+                  "DENER — ama benzer AST'ler denk sorgular değildir, dolayısıyla YANLIŞ "
+                  "cevap dönebilir. Bizim dürüst negatif bulgumuz bu: sembolik denklik "
+                  "kanıtlayıcı olmadan semantik DP önbelleği güvenli değildir. (L2 yalnızca "
+                  "gömme modeli kuruluysa tetiklenir.)"},
+        "mode": "semantic",
+        "queries": [
+            "SELECT COUNT(*) FROM adult WHERE age >= 30",
+            "SELECT COUNT(*) FROM adult WHERE age > 29",
+            "SELECT COUNT(*) FROM adult WHERE age >= 30 AND age < 200",
+        ],
+    },
+]
+
+# backward-compatible name->queries map (kept for /api/preset)
+PRESETS = {uc["name"]["en"]: uc["queries"] for uc in USE_CASES}
 EXAMPLES = [
     "SELECT COUNT(*) FROM adult WHERE age >= 30",
     "SELECT AVG(age) FROM adult",
