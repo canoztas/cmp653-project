@@ -104,6 +104,21 @@ def budget_savings_ratio(p: Sequence[float], k: int) -> float:
 # Concentration bound (Proposition 4)
 # ---------------------------------------------------------------------------
 
+def occupancy_variance(p: Sequence[float], k: int) -> float:
+    """Variance-aware upper bound on Var[u_k] (Proposition 4, tight version).
+
+    u_k = sum_i X_i with X_i = 1[template i appears] and q_i = 1-(1-p_i)^k.
+    The occupancy indicators are negatively associated, so
+        Var[u_k] <= sum_i q_i (1 - q_i) = sum_i (1-(1-p_i)^k)(1-p_i)^k <= m/4.
+    This is O(m), unlike McDiarmid's O(k) sub-Gaussian proxy, so it stays
+    informative in the saturated regime where u_k is bounded by m. Chebyshev
+    then gives P(|u_k - E[u_k]| >= t) <= occupancy_variance(p, k) / t**2.
+    """
+    p_arr = np.clip(np.asarray(p, dtype=float), 0.0, 1.0)
+    q = 1.0 - (1.0 - p_arr) ** k
+    return float(np.sum(q * (1.0 - q)))
+
+
 def mcdiarmid_tail_bound(k: int, deviation: float) -> float:
     """Upper bound P(|u_k - E[u_k]| >= deviation) using McDiarmid's inequality.
 

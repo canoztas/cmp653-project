@@ -352,13 +352,14 @@ Write $S(k)=1-\E[u_k]/k$ with $\E[u_k]=\sum_{i=1}^m \phi(p_i)$ and $\phi(x)=1-(1
 
 \begin{prop}[Concentration of $u_k$]
 \label{prop:concentration}
-Changing a single $Q_t$ changes $u_k$ by at most $1$. By McDiarmid's bounded-differences inequality,
+We give two bounds. \emph{(Distribution-free.)} Changing a single $Q_t$ changes $u_k$ by at most $1$, so McDiarmid's bounded-differences inequality gives $\Prob[\,|u_k-\E[u_k]|\ge t\,]\le 2\exp(-2t^2/k)$. This is only a crude fallback: it scales with the workload length $k$ and becomes vacuous once $u_k$ saturates near its ceiling $m$. \emph{(Variance-aware.)} Write $u_k=\sum_i X_i$ with $X_i=\mathbf 1[\text{template }i\text{ appears}]$ and $q_i=1-(1-p_i)^k$. The occupancy indicators are negatively associated, so
 \[
-\Prob\bigl[\, |u_k - \E[u_k]| \geq t \,\bigr] \;\leq\; 2\exp\bigl(-2t^2 / k\bigr).
+\Var[u_k] \;\le\; \sum_i q_i(1-q_i) \;=\; \sum_i \bigl(1-(1-p_i)^k\bigr)(1-p_i)^k \;=:\; V \;\le\; \tfrac{m}{4},
 \]
+and Chebyshev's inequality gives $\Prob[\,|u_k-\E[u_k]|\ge t\,]\le V/t^2$.
 \end{prop}
 
-\noindent For any threshold $c>\E[u_k]$, the chance of spending at least $c\eps_q$ is at most $\exp(-2(c-\E[u_k])^2/k)$, giving an explicit bound on the budget-exhaustion event.
+\noindent Because $V=O(m)$ rather than $O(k)$, the variance-aware tail is the one to use in the saturated operating regime, and it is the honest bound on the budget-exhaustion event: for $c/\eps_q>\E[u_k]$, $\Prob[u_k\eps_q\ge c]\le V/(c/\eps_q-\E[u_k])^2$. (At $\alpha{=}1,m{=}10,k{=}100$, $\sqrt V=0.27$ matches the Monte-Carlo standard deviation of $u_k$ to two digits, whereas the McDiarmid sub-Gaussian scale $\sqrt{k}/2=5$ overstates the spread $\sim$18$\times$; we therefore report McDiarmid as a fallback only.) The estimator \texttt{occupancy\_variance} is implemented in \texttt{src/dpdb/model.py}.
 
 \begin{prop}[Utility under a fixed total budget]
 \label{prop:utility}
@@ -881,7 +882,11 @@ The current implementation collapses AVG to a single Laplace release with sensit
     \item \textbf{Semantic similarity is not equivalence.} Tree-kernel + embedding matching admits false positives (different answers, similar ASTs) and misses textbook equivalences, so a ``semantic DP cache'' is unsafe without a symbolic equivalence prover.
 \end{enumerate}
 
-\noindent The model also flags its failure regimes---uniform workloads and drill-downs ($\alpha\to0$, W4), where every query is unique, savings vanish, and reconstruction succeeds at any practical $\eps$---and makes the cost of freshness explicit (staleness $\tau{=}10$ over horizon $T{=}100$ costs ${\sim}10\times$ the static budget, as an upper bound). Two assumptions remain (i.i.d.\ rather than bursty sampling, and a single Poisson invalidation rate), both tractable in the same framework (Section~\ref{sec:future-work}). The middleware, the full $4{,}155$-trial corpus, and the figures are reproducible from the repository.
+\noindent The model also flags its failure regimes---uniform workloads and drill-downs ($\alpha\to0$, W4), where every query is unique, savings vanish, and reconstruction succeeds at any practical $\eps$---and makes the cost of freshness explicit (staleness $\tau{=}10$ over horizon $T{=}100$ costs ${\sim}10\times$ the static budget, as an upper bound).
+
+\paragraph{Threats to validity.} I separate three. \emph{Construct.} The headline ``$\E[u_k]$ within $<3\%$ in 21/24 cells'' (Section~\ref{sec:eval}) is a Monte-Carlo \emph{self-consistency} check, not an external-validity test: the empirical $u_k$ is sampled from the very Zipf distribution the closed form integrates, so the $30$-trial mean converges to $\E[u_k]$ \emph{by construction}. It validates the estimator's arithmetic and convergence, not the claim that real workloads are i.i.d.\ Zipf. Per-release MAE excludes rejected queries, so we report the answered fraction in the same cells. \emph{Internal.} The budget forecast assumes a \emph{non-adaptive} analyst whose template choices are independent of the released noise. Privacy is unaffected---DP composition is adaptive-safe and total spend is hard-capped at $B$ by construction---but $\E[u_k]$ is an \emph{average-case} forecast: against a worst-case adaptive analyst the only valid bound is $u_k\le\min(k,m)$, i.e.\ $\eps_{\mathrm{wa}}\le\eps_q\,m$, which is exactly the $B/m$ safe allocator (Table~\ref{tab:allocation}). The constructed mixed-workload agreement is a ledger identity ($u_k$ is fixed by construction, so $\eps_q u_k$ is definitional with zero trial variance), not an independent prediction. \emph{External.} All workloads are synthetic Zipf sweeps plus TPC-H/Adult parametric families; with no real analyst query trace, generalization to production heavy-tailed, bursty, or correlated workloads is untested---the single largest threat. Scope is single-table aggregates under basic sequential composition; JOINs, tight (R\'enyi/zCDP/PLD) composition, and renewal-process arrivals are out of scope (Section~\ref{sec:future-work}).
+
+\paragraph{Reproducibility.} The middleware, all experiment generators, and the analysis scripts are in the repository, and the canonical result CSVs the tables cite are committed under \texttt{results/}. The model-validation, predictor, and allocation experiments use fixed integer seeds and are bit-reproducible (the analysis of the predictive table is regenerated by \texttt{experiments/analyze\_predictive.py}); the large six-sweep campaign is \emph{distributionally} reproducible---re-running its generators yields statistically equivalent numbers, and the committed CSVs from the submitted runs are the canonical artifact.
 
 %% ============================================================
 \begin{thebibliography}{20}
