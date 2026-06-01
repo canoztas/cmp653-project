@@ -8,6 +8,12 @@ A Python middleware that intercepts aggregate SQL queries (COUNT, SUM, AVG), add
 2. drive a model-based **adaptive budget allocator**,
 3. cross-check empirical privacy leakage against theoretical bounds.
 
+> **▶ Live demo:** `pip install flask duckdb && python demo/app.py` → open
+> http://127.0.0.1:5000 to watch each query flow through the real pipeline
+> step by step (parse → template → cache → ε allocation → Laplace noise →
+> ledger) with a live budget meter, across all six execution modes. See
+> [`demo/README.md`](demo/README.md).
+
 ---
 
 ## The problem

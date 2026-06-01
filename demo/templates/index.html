@@ -1,0 +1,289 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>DP-SQL Middleware — Live Pipeline Demo</title>
+<style>
+  :root{
+    --bg:#0e1117; --panel:#161b22; --panel2:#1c232d; --line:#30363d;
+    --txt:#e6edf3; --dim:#8b949e; --blue:#388bfd; --green:#3fb950;
+    --amber:#d29922; --red:#f85149; --purple:#a371f7;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--txt);
+    font:14px/1.5 -apple-system,Segoe UI,Roboto,sans-serif}
+  code,.mono{font-family:"Cascadia Code",Consolas,monospace}
+  header{padding:14px 20px;border-bottom:1px solid var(--line);
+    display:flex;align-items:baseline;gap:12px}
+  header h1{font-size:17px;margin:0}
+  header .sub{color:var(--dim);font-size:12px}
+  .wrap{max-width:1180px;margin:0 auto;padding:16px 20px}
+  .controls{background:var(--panel);border:1px solid var(--line);border-radius:10px;
+    padding:14px;display:grid;gap:10px;margin-bottom:16px}
+  .row{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+  input[type=text],select,input[type=number]{background:#0d1117;color:var(--txt);
+    border:1px solid var(--line);border-radius:7px;padding:8px 10px;font-size:13px}
+  input#sql{flex:1;min-width:320px;font-family:Consolas,monospace}
+  input[type=number]{width:74px}
+  label.fld{color:var(--dim);font-size:12px;display:flex;align-items:center;gap:5px}
+  button{background:var(--panel2);color:var(--txt);border:1px solid var(--line);
+    border-radius:7px;padding:8px 13px;font-size:13px;cursor:pointer}
+  button:hover{border-color:var(--blue)}
+  button.primary{background:var(--blue);border-color:var(--blue);font-weight:600}
+  button.ghost{background:transparent;font-size:12px;padding:5px 9px;color:var(--dim)}
+  .grid{display:grid;grid-template-columns:minmax(0,1fr) 360px;gap:16px}
+  @media(max-width:880px){.grid{grid-template-columns:1fr}}
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:14px}
+  .card h2{font-size:12px;text-transform:uppercase;letter-spacing:.6px;color:var(--dim);
+    margin:0 0 12px}
+  /* pipeline steps */
+  .step{display:flex;gap:11px;padding:9px 11px;border:1px solid var(--line);
+    border-radius:9px;margin-bottom:8px;opacity:.32;transition:.25s;background:#0d1117}
+  .step.on{opacity:1;border-color:var(--blue);box-shadow:0 0 0 1px var(--blue)}
+  .step.done{opacity:.9}
+  .step .num{width:24px;height:24px;border-radius:50%;background:var(--panel2);
+    border:1px solid var(--line);display:flex;align-items:center;justify-content:center;
+    font-size:12px;flex:none;font-weight:600}
+  .step.on .num{background:var(--blue);border-color:var(--blue)}
+  .step .body{min-width:0}
+  .step .nm{font-weight:600;font-size:13px}
+  .step .dt{color:var(--dim);font-size:12px;font-family:Consolas,monospace;
+    word-break:break-word;margin-top:2px}
+  .badge{font-size:10px;padding:1px 7px;border-radius:20px;margin-left:7px;vertical-align:middle}
+  .b-ok{background:rgba(56,139,253,.16);color:var(--blue)}
+  .b-hit{background:rgba(63,185,80,.16);color:var(--green)}
+  .b-miss{background:rgba(210,153,34,.16);color:var(--amber)}
+  .b-reject,.b-error{background:rgba(248,81,73,.16);color:var(--red)}
+  .s-ok .num{border-color:var(--blue)} .s-hit.on .num{background:var(--green);border-color:var(--green)}
+  .s-hit .nm{} .s-reject .num,.s-error .num{border-color:var(--red)}
+  /* budget bar */
+  .bar{height:22px;background:#0d1117;border:1px solid var(--line);border-radius:6px;
+    overflow:hidden;position:relative}
+  .bar>i{display:block;height:100%;background:linear-gradient(90deg,var(--blue),var(--purple));
+    width:0;transition:width .4s}
+  .bar.full>i{background:linear-gradient(90deg,var(--amber),var(--red))}
+  .kv{display:flex;justify-content:space-between;font-size:12px;margin:3px 0;color:var(--dim)}
+  .kv b{color:var(--txt);font-family:Consolas,monospace}
+  .ans{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:8px}
+  .ans .box{background:#0d1117;border:1px solid var(--line);border-radius:8px;padding:8px}
+  .ans .box .lab{font-size:10px;color:var(--dim);text-transform:uppercase}
+  .ans .box .val{font-family:Consolas,monospace;font-size:16px;margin-top:2px;word-break:break-all}
+  .val.true{color:var(--dim)} .val.noisy{color:var(--green)}
+  /* chart */
+  .chart{display:flex;align-items:flex-end;gap:3px;height:84px;padding-top:6px;
+    border-bottom:1px solid var(--line);overflow-x:auto}
+  .chart .bx{flex:none;width:12px;background:var(--blue);border-radius:2px 2px 0 0;
+    min-height:2px;position:relative}
+  .chart .bx.hit{background:var(--green);height:5px!important}
+  .chart .bx.reject{background:var(--red)}
+  .tl{display:flex;gap:4px;flex-wrap:wrap;margin-top:8px;font-size:13px}
+  .tl span{font-family:monospace}
+  .hint{color:var(--dim);font-size:11px;margin-top:6px}
+  .pills button{font-size:11px;padding:4px 8px}
+  .legend{font-size:11px;color:var(--dim);display:flex;gap:12px;margin-top:6px}
+  .dot{display:inline-block;width:9px;height:9px;border-radius:2px;margin-right:4px;vertical-align:middle}
+</style>
+</head>
+<body>
+<header>
+  <h1>DP-SQL Middleware <span style="color:var(--dim)">— Live Pipeline Demo</span></h1>
+  <span class="sub">every query runs through the real <code>src/dpdb</code> components over the real Adult table</span>
+</header>
+
+<div class="wrap">
+  <div class="controls">
+    <div class="row">
+      <input id="sql" type="text" value="SELECT COUNT(*) FROM adult WHERE age >= 30"
+             placeholder="SELECT COUNT(*)/SUM(col)/AVG(col) FROM adult WHERE … [GROUP BY …]">
+      <button class="primary" id="run">Run ▶</button>
+      <button id="reset">Reset</button>
+    </div>
+    <div class="row">
+      <label class="fld">Mode
+        <select id="mode">
+          <option value="predictive">predictive (ε_q=B/Û)</option>
+          <option value="workload">workload-aware (cache free)</option>
+          <option value="semantic">semantic (+L2 similarity)</option>
+          <option value="temporal">temporal (τ staleness, λ updates)</option>
+          <option value="naive">naive (no cache)</option>
+          <option value="exact">exact (no DP)</option>
+        </select></label>
+      <label class="fld">B <input type="number" id="B" value="10" step="1" min="1"></label>
+      <label class="fld">ε_fixed <input type="number" id="epsf" value="1" step="0.5" min="0.1"></label>
+      <label class="fld">k <input type="number" id="k" value="20" step="1" min="1"></label>
+      <label class="fld tmp">τ <input type="number" id="tau" value="2" step="1" min="1"></label>
+      <label class="fld tmp">λ <input type="number" id="lam" value="0.5" step="0.1" min="0" max="1"></label>
+      <label class="fld">speed
+        <input type="range" id="speed" min="80" max="900" value="420"></label>
+      <label class="fld"><input type="checkbox" id="stepmode"> step-by-step</label>
+      <button class="ghost" id="next" style="display:none">Next ▶</button>
+    </div>
+    <div class="row pills">
+      <span class="fld">Examples:</span>
+      {% for ex in examples %}<button class="ghost ex">{{ ex }}</button>{% endfor %}
+    </div>
+    <div class="row pills">
+      <span class="fld">Workloads:</span>
+      {% for p in presets %}<button class="ghost preset">{{ p }}</button>{% endfor %}
+      <span class="hint">↑ runs a sequence so you watch the budget deplete &amp; cache hits go free</span>
+    </div>
+  </div>
+
+  <div class="grid">
+    <div class="card">
+      <h2>Pipeline — query passes through each step</h2>
+      <div id="steps"></div>
+      <div class="legend">
+        <span><i class="dot" style="background:var(--blue)"></i>spend</span>
+        <span><i class="dot" style="background:var(--green)"></i>cache hit (free)</span>
+        <span><i class="dot" style="background:var(--amber)"></i>miss</span>
+        <span><i class="dot" style="background:var(--red)"></i>reject / error</span>
+      </div>
+    </div>
+
+    <div>
+      <div class="card" style="margin-bottom:14px">
+        <h2>Privacy budget ledger</h2>
+        <div class="bar" id="barwrap"><i id="bar"></i></div>
+        <div class="kv" style="margin-top:6px"><span>spent</span><b><span id="spent">0</span> / <span id="total">10</span></b></div>
+        <div class="ans">
+          <div class="box"><div class="lab">true (hidden)</div><div class="val true" id="vtrue">—</div></div>
+          <div class="box"><div class="lab">released (noisy)</div><div class="val noisy" id="vnoisy">—</div></div>
+        </div>
+        <div class="kv" style="margin-top:8px"><span>|error| this query</span><b id="verr">—</b></div>
+        <div class="kv"><span>ε_q this query</span><b id="veps">—</b></div>
+      </div>
+
+      <div class="card" style="margin-bottom:14px">
+        <h2>Workload state (the model in action)</h2>
+        <div class="kv"><span>queries seen</span><b id="qseen">0</b></div>
+        <div class="kv"><span>distinct templates u_k</span><b id="uk">0</b></div>
+        <div class="kv"><span>cache entries</span><b id="cache">0</b></div>
+        <div class="kv"><span>savings S(k)=1−u_k/k</span><b id="sav">0%</b></div>
+        <div class="kv" id="uhatrow"><span>predicted Û</span><b id="uhat">—</b></div>
+        <div class="kv" id="semrow"><span>L2 semantic hits</span><b id="sem">0</b></div>
+        <div class="kv" id="evrow"><span>stale evictions / clock t</span><b><span id="ev">0</span> / <span id="clk">0</span></b></div>
+      </div>
+
+      <div class="card">
+        <h2>ε per query &amp; hit/miss timeline</h2>
+        <div class="chart" id="chart"></div>
+        <div class="tl" id="tl"></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+const $=id=>document.getElementById(id);
+const sleep=ms=>new Promise(r=>setTimeout(r,ms));
+let pending=null, pIdx=0;           // for step-by-step mode
+
+function cfg(){return{mode:$("mode").value,total_budget:+$("B").value,
+  eps_fixed:+$("epsf").value,k_total:+$("k").value,tau:+$("tau").value,lam:+$("lam").value};}
+
+function toggleModeUI(){
+  const m=$("mode").value;
+  document.querySelectorAll(".tmp").forEach(e=>e.style.display=m==="temporal"?"flex":"none");
+  $("uhatrow").style.display=m==="predictive"?"flex":"none";
+  $("semrow").style.display=m==="semantic"?"flex":"none";
+  $("evrow").style.display=m==="temporal"?"flex":"none";
+}
+
+async function reset(){
+  const r=await fetch("/api/reset",{method:"POST",headers:{"Content-Type":"application/json"},
+    body:JSON.stringify(cfg())}).then(x=>x.json());
+  $("steps").innerHTML=""; $("vtrue").textContent="—"; $("vnoisy").textContent="—";
+  $("verr").textContent="—"; $("veps").textContent="—";
+  applyState(r.state); drawChart(r.state);
+}
+
+function badge(s){const m={ok:"OK",hit:"HIT (free)",miss:"MISS",reject:"REJECT",error:"ERROR"};
+  return `<span class="badge b-${s}">${m[s]||s}</span>`;}
+
+function stepNode(s,on){
+  return `<div class="step s-${s.status} ${on?'on':'done'}" data-i="${s.id}">
+    <div class="num">${s.id}</div>
+    <div class="body"><div class="nm">${s.name}${badge(s.status)}</div>
+    <div class="dt">${s.detail||""}</div></div></div>`;}
+
+function applyState(st){
+  $("total").textContent=st.budget_total; $("spent").textContent=st.budget_spent;
+  const pct=Math.min(100,100*st.budget_spent/st.budget_total);
+  $("bar").style.width=pct+"%"; $("barwrap").classList.toggle("full",pct>85);
+  $("qseen").textContent=st.queries_seen; $("uk").textContent=st.u_k;
+  $("cache").textContent=st.cache_size; $("sav").textContent=st.savings_pct+"%";
+  $("uhat").textContent=st.uhat==null?"—":st.uhat;
+  $("sem").textContent=st.semantic_hits; $("ev").textContent=st.expired_evictions;
+  $("clk").textContent=st.logical_time;
+  if(st.budget_remaining==null){$("total").textContent="—";$("spent").textContent="—(exact)";}
+  toggleModeUI();
+}
+function applyFinal(f){
+  if(!f) return;
+  if(f.kind==="rejected"){$("vtrue").textContent="—";$("vnoisy").textContent="rejected";
+    $("verr").textContent="—";$("veps").textContent="0 (no budget)";return;}
+  $("vtrue").textContent=fmt(f.true); $("vnoisy").textContent=fmt(f.noisy);
+  $("vnoisy").style.color=f.kind==="l2_hit"?"var(--purple)":(f.kind==="exact"?"var(--dim)":"var(--green)");
+  $("verr").textContent=f.err==null?"—":f.err; $("veps").textContent=f.eps;
+}
+const fmt=v=>typeof v==="number"?(Number.isInteger(v)?v:v.toFixed(2)):v;
+
+function drawChart(st){
+  const h=(st.history||[]); const maxe=Math.max(0.001,...h.map(x=>x.eps||0));
+  $("chart").innerHTML=h.map(x=>{
+    const cls=x.rejected?"reject":(x.hit?"hit":"");
+    const ht=x.hit?5:Math.max(4,72*(x.eps||0)/maxe);
+    const tip=x.rejected?"rejected":(x.hit?`#${x.template} hit (free)`:`#${x.template}  ε=${x.eps}  |err|=${x.err}`);
+    return `<div class="bx ${cls}" style="height:${ht}px" title="${tip}"></div>`;}).join("");
+  $("tl").innerHTML=h.map(x=>x.rejected?'<span style="color:var(--red)">✕</span>'
+    :(x.hit?(x.l2?'<span style="color:var(--purple)" title="L2 semantic hit">◑</span>'
+      :'<span style="color:var(--green)">○</span>')
+      :'<span style="color:var(--blue)">●</span>')).join("");
+}
+
+async function animate(trace){
+  $("steps").innerHTML="";
+  const sp=+$("speed").value;
+  for(let i=0;i<trace.steps.length;i++){
+    $("steps").innerHTML=trace.steps.map((s,j)=>stepNode(s,j===i)).join("");
+    if(trace.steps[i].status!=="error" && i===trace.steps.length-1) applyFinal(trace.final);
+    await sleep(sp);
+  }
+  $("steps").innerHTML=trace.steps.map(s=>stepNode(s,false)).join("");
+  applyFinal(trace.final); applyState(trace.state); drawChart(trace.state);
+}
+
+function showStep(){ // step-by-step mode renders up to pIdx
+  $("steps").innerHTML=pending.steps.map((s,j)=>stepNode(s,j===pIdx)).join("");
+  if(pIdx>=pending.steps.length-1){applyFinal(pending.final);applyState(pending.state);drawChart(pending.state);}
+}
+
+async function runQuery(sql){
+  const t=await fetch("/api/step",{method:"POST",headers:{"Content-Type":"application/json"},
+    body:JSON.stringify({sql})}).then(x=>x.json());
+  if(!t.ok && !t.steps){alert(t.error||"error");return;}
+  if($("stepmode").checked){pending=t;pIdx=0;$("next").style.display="";showStep();}
+  else{await animate(t);}
+  return t;
+}
+
+$("run").onclick=()=>runQuery($("sql").value);
+$("reset").onclick=reset;
+$("mode").onchange=reset;
+$("next").onclick=()=>{if(!pending)return;pIdx++;if(pIdx>=pending.steps.length){
+  $("next").style.display="none";pending=null;return;}showStep();};
+document.querySelectorAll(".ex").forEach(b=>b.onclick=()=>{$("sql").value=b.textContent;runQuery(b.textContent);});
+document.querySelectorAll(".preset").forEach(b=>b.onclick=async()=>{
+  await reset();
+  const r=await fetch("/api/preset/"+encodeURIComponent(b.textContent)).then(x=>x.json());
+  const was=$("stepmode").checked;$("stepmode").checked=false;
+  for(const q of r.queries){$("sql").value=q;await runQuery(q);await sleep(180);}
+  $("stepmode").checked=was;
+});
+// init
+reset();
+</script>
+</body>
+</html>
