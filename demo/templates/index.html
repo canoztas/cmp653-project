@@ -124,6 +124,78 @@
   .gitem.flash{animation:flash 1s}
   @keyframes flash{0%,100%{border-color:var(--line)}30%{border-color:var(--amber);box-shadow:0 0 0 2px var(--amber-bg)}}
   .x{cursor:pointer;color:var(--dim);font-size:18px;line-height:1}
+
+  /* ============ polish layer ============ */
+  body{background:
+    radial-gradient(1100px 520px at 78% -8%, rgba(68,147,248,.10), transparent 60%),
+    radial-gradient(900px 500px at 8% 4%, rgba(163,113,247,.08), transparent 55%),
+    var(--bg);}
+  .appbar{box-shadow:0 1px 0 rgba(255,255,255,.02),0 6px 22px rgba(0,0,0,.28)}
+  .appbar h1{letter-spacing:.2px}
+  .seg{box-shadow:inset 0 0 0 1px rgba(255,255,255,.02)}
+  .seg button{transition:.18s}
+  .seg button.on{box-shadow:0 2px 10px rgba(68,147,248,.45)}
+  .btn{transition:transform .12s,border-color .15s,box-shadow .15s,background .15s}
+  .btn:hover{transform:translateY(-1px)}
+  .btn:active{transform:translateY(0)}
+  .btn.primary{background:linear-gradient(135deg,#5aa0ff,#3b7fe0);box-shadow:0 4px 14px rgba(68,147,248,.4)}
+  .btn.primary:hover{box-shadow:0 6px 20px rgba(68,147,248,.55)}
+  .card{background:linear-gradient(180deg,rgba(255,255,255,.022),rgba(255,255,255,0)) ,var(--panel);
+    box-shadow:0 1px 0 rgba(255,255,255,.03) inset,0 10px 30px -16px rgba(0,0,0,.6);transition:border-color .2s}
+  .controls{background:linear-gradient(180deg,rgba(255,255,255,.025),rgba(255,255,255,0)),var(--panel);
+    box-shadow:0 10px 30px -18px rgba(0,0,0,.6)}
+  input[type=text],input[type=number]{transition:border-color .15s,box-shadow .15s}
+  input:focus{outline:none;border-color:var(--blue);box-shadow:0 0 0 3px var(--blue-bg)}
+  .modechips button{transition:.16s}
+  .modechips button:hover{border-color:var(--line2);color:var(--txt)}
+  .modechips button.on{box-shadow:0 0 0 1px var(--blue),0 3px 12px rgba(68,147,248,.28)}
+  /* steps */
+  .step{animation:rise .35s ease both}
+  @keyframes rise{from{opacity:0;transform:translateY(5px)}to{opacity:var(--o,1);transform:none}}
+  .step.on,.step.done{--o:1}
+  .step:not(.on):not(.done){--o:.4}
+  .step__icon{transition:.25s cubic-bezier(.2,.7,.2,1)}
+  .step.on .step__icon{background:linear-gradient(135deg,var(--accent),color-mix(in srgb,var(--accent) 55%,#000));
+    color:#fff;border-color:var(--accent);transform:scale(1.06);animation:pulse 1.4s ease-in-out infinite}
+  @keyframes pulse{0%,100%{box-shadow:0 0 0 4px var(--accent-bg)}50%{box-shadow:0 0 0 7px transparent}}
+  .step:not(:last-child)::before{transition:background .3s}
+  .step.done:not(:last-child)::before,.step.on:not(:last-child)::before{
+    background:linear-gradient(180deg,var(--accent),transparent)}
+  .step__title{letter-spacing:.1px}
+  .badge{box-shadow:inset 0 0 0 1px color-mix(in srgb,var(--accent) 30%,transparent)}
+  .chip{transition:.15s}.chip:hover{transform:translateY(-1px);background:var(--blue-bg)}
+  /* budget bar: gradient + animated sheen */
+  .bar{box-shadow:inset 0 1px 3px rgba(0,0,0,.5)}
+  .bar>i{position:relative;box-shadow:0 0 14px rgba(99,130,255,.5)}
+  .bar>i::after{content:"";position:absolute;inset:0;border-radius:inherit;
+    background:linear-gradient(90deg,transparent,rgba(255,255,255,.28),transparent);
+    background-size:200% 100%;animation:sheen 2.2s linear infinite}
+  @keyframes sheen{from{background-position:200% 0}to{background-position:-60% 0}}
+  .ans .box{transition:border-color .2s,transform .2s}
+  .val.noisy{text-shadow:0 0 14px rgba(63,185,80,.35)}
+  /* outcome banner */
+  .outcome{display:none;align-items:center;gap:9px;margin-bottom:11px;padding:9px 12px;border-radius:9px;
+    font-size:12.5px;font-weight:600;border:1px solid var(--accent);background:var(--accent-bg);color:var(--accent);
+    animation:popin .4s cubic-bezier(.2,.9,.2,1)}
+  .outcome.show{display:flex}
+  @keyframes popin{from{opacity:0;transform:scale(.96) translateY(-3px)}to{opacity:1;transform:none}}
+  .outcome .big{font-family:Consolas,monospace;font-size:15px;margin-left:auto}
+  /* chart bars gradient + hover */
+  .bx{background:linear-gradient(180deg,#5aa0ff,#3b7fe0);transition:transform .12s,filter .12s}
+  .bx:hover{transform:scaleY(1.06);filter:brightness(1.2)}
+  .bx.hit{background:linear-gradient(180deg,#56d364,#2ea043)}
+  .bx.l2{background:linear-gradient(180deg,#b88bff,#8a5cf0)}
+  .bx.reject{background:linear-gradient(180deg,#ff6b62,#da3633)}
+  /* drawer */
+  .drawer{box-shadow:-20px 0 60px -20px rgba(0,0,0,.7);backdrop-filter:blur(2px)}
+  .gitem{transition:border-color .18s,transform .12s}
+  .gitem:hover{border-color:var(--line2);transform:translateX(-2px)}
+  .scrim{backdrop-filter:blur(2px)}
+  /* scrollbars */
+  ::-webkit-scrollbar{width:10px;height:10px}
+  ::-webkit-scrollbar-thumb{background:var(--line2);border-radius:10px;border:2px solid var(--bg)}
+  ::-webkit-scrollbar-thumb:hover{background:#4a586a}
+  @media(prefers-reduced-motion:reduce){*{animation:none!important}}
 </style>
 </head>
 <body>
@@ -190,6 +262,7 @@
     <div>
       <div class="card" style="margin-bottom:14px">
         <h2 data-en="Privacy budget ledger" data-tr="Gizlilik bütçe defteri">Budget</h2>
+        <div class="outcome" id="outcome"></div>
         <div class="bar" id="barwrap"><i id="bar"></i></div>
         <div class="kv" style="margin-top:6px"><span data-en="ε spent" data-tr="ε harcanan">ε spent</span><b><span id="spent">0</span> / <span id="total">10</span></b></div>
         <div class="ans">
@@ -329,8 +402,25 @@ function applyState(st){
   $('ev').textContent=st.expired_evictions;$('clk').textContent=st.logical_time;
 }
 const fmt=v=>typeof v==='number'?(Number.isInteger(v)?v:v.toFixed(2)):v;
+const OUTCOME={
+  cache_hit:{acc:'green',en:'FREE — exact cache hit (Δε=0)',tr:'BEDAVA — birebir önbellek isabeti (Δε=0)'},
+  l2_hit:{acc:'purple',en:'L2 semantic hit ⚠ similarity ≠ equivalence',tr:'L2 semantik isabet ⚠ benzerlik ≠ denklik'},
+  miss:{acc:'blue',en:'Released with fresh noise',tr:'Taze gürültüyle yayınlandı'},
+  miss_group:{acc:'blue',en:'Released per group (parallel composition)',tr:'Grup başına yayınlandı (paralel kompozisyon)'},
+  rejected:{acc:'red',en:'REJECTED — budget exhausted',tr:'REDDEDİLDİ — bütçe tükendi'},
+  exact:{acc:'dim',en:'EXACT — no DP, true answer',tr:'EXACT — DP yok, gerçek cevap'},
+};
+function setOutcome(f){
+  const o=$('outcome');if(!f||!OUTCOME[f.kind]){o.className='outcome';return;}
+  const m=OUTCOME[f.kind];const big=f.kind==='rejected'?'':(f.eps!=null?`ε=${f.eps}`:'');
+  o.style.setProperty('--accent',`var(--${m.acc})`);
+  o.style.setProperty('--accent-bg',m.acc==='dim'?'rgba(154,166,178,.12)':`var(--${m.acc}-bg)`);
+  o.innerHTML=`<span>${t(m)}</span>${big?`<span class="big">${big}</span>`:''}`;
+  o.className='outcome show';o.style.animation='none';o.offsetHeight;o.style.animation='';
+}
 function applyFinal(f){
   if(!f)return;
+  setOutcome(f);
   if(f.kind==='rejected'){$('vtrue').textContent='—';$('vnoisy').textContent=LANG==='tr'?'reddedildi':'rejected';$('verr').textContent='—';$('veps').textContent='0';return;}
   $('vtrue').textContent=fmt(f.true);$('vnoisy').textContent=fmt(f.noisy);
   $('vnoisy').style.color=f.kind==='l2_hit'?'var(--purple)':(f.kind==='exact'?'var(--dim)':'var(--green)');
