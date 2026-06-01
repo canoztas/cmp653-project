@@ -179,7 +179,7 @@ def run_full_campaign(config: Config, output_dir: Path, n_trials: int = 30,
             for mode in modes:
                 for trial in range(n_trials):
                     cell += 1
-                    seed = trial * 1000 + hash((wl, eps_q, mode.value)) % 10000
+                    seed = trial * 1000 + __import__("zlib").crc32(f"{wl}|{eps_q}|{mode.value}".encode()) % 10000  # deterministic
                     queries, predicted_eu = build_workload(wl, k, seed)
                     r = run_trial(config, mode, queries, eps_q, seed,
                                   total_eps_cap=total_eps_cap)

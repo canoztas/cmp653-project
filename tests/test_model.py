@@ -16,6 +16,7 @@ from dpdb.model import (
     expected_budget_workload_aware,
     expected_unique_queries,
     mcdiarmid_tail_bound,
+    occupancy_variance,
     predict_utility_fixed_budget,
     TemporalRegime,
     uniform_distribution,
@@ -37,6 +38,29 @@ class TestZipfDistribution:
     def test_high_alpha_concentrates(self):
         p = zipf_distribution(10, alpha=5.0)
         assert p[0] > 0.9  # heavy concentration on rank-1
+
+
+class TestOccupancyVariance:
+    def test_bounded_by_m_over_4_and_positive(self):
+        # Var[u_k] <= m/4 (Prop 4 variance-aware bound), and positive when not saturated
+        from dpdb.model import zipf_distribution
+        p = zipf_distribution(10, 1.0)
+        V = occupancy_variance(p, 100)
+        assert 0.0 < V <= 10 / 4 + 1e-9
+
+    def test_matches_monte_carlo_std(self):
+        # sqrt(V) tracks the empirical std of u_k (the whole point of the fix)
+        from dpdb.model import zipf_distribution
+        p = zipf_distribution(10, 1.0)
+        rng = np.random.default_rng(0)
+        uk = [len(set(rng.choice(10, size=100, p=p).tolist())) for _ in range(4000)]
+        assert occupancy_variance(p, 100) ** 0.5 == pytest.approx(float(np.std(uk)), abs=0.05)
+
+    def test_far_tighter_than_mcdiarmid_under_saturation(self):
+        # the saturation regime: variance-aware std << McDiarmid sub-Gaussian scale sqrt(k)/2
+        from dpdb.model import zipf_distribution
+        p = zipf_distribution(10, 1.0)
+        assert occupancy_variance(p, 100) ** 0.5 < (100 ** 0.5) / 2 / 5  # >5x tighter
 
 
 class TestExpectedUniqueQueries:

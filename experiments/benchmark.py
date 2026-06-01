@@ -111,7 +111,7 @@ def run_all_experiments(
 
         for mode in modes:
             for trial in range(n_trials):
-                seed = trial * 1000 + hash(wl_name) % 1000
+                seed = trial * 1000 + __import__("zlib").crc32(wl_name.encode()) % 1000  # deterministic
                 print(f"  Mode: {mode.value}, Trial: {trial+1}/{n_trials}")
 
                 df, budget = run_single_workload(

@@ -121,8 +121,8 @@ def shadow_model_mia(
     y = []  # label: 1 if config_with, 0 if config_without
 
     for trial in range(n_shadow):
-        seed_with = trial * 31 + hash(("with", family)) % 10000
-        seed_without = trial * 31 + hash(("without", family)) % 10000
+        seed_with = trial * 31 + __import__("zlib").crc32(("with" + family).encode()) % 10000  # deterministic
+        seed_without = trial * 31 + __import__("zlib").crc32(("without" + family).encode()) % 10000  # deterministic
 
         queries = build_workload_queries(family, k, seed=trial)
 

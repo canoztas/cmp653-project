@@ -83,7 +83,7 @@ def cross_scale_validation(output_dir, n_trials=30):
                 p = zipf_distribution(m, alpha)
                 pred = expected_unique_queries(p, k)
                 for trial in range(n_trials):
-                    seed = trial * 71 + int(alpha * 100) + hash(scale_label + set_label) % 1000
+                    seed = trial * 71 + int(alpha * 100) + __import__("zlib").crc32((scale_label + set_label).encode()) % 1000  # deterministic
                     queries, _ = generate_zipf_workload(templates, alpha=alpha,
                                                         k=k, seed=seed)
                     emp = run_one(cfg, queries, eps_q, seed)
