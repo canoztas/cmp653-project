@@ -31,6 +31,7 @@ import numpy as np
 
 from dpdb.model import expected_unique_queries
 from dpdb.parser import ParsedQuery
+from dpdb.predictors import predict_smoothed_gt
 from dpdb.template import extract_template, template_hash
 
 
@@ -42,6 +43,7 @@ class PredictiveConfig:
     min_warmup: int = 5
     floor_eps: float = 0.01    # never go below this per-query eps
     pseudocount: float = 0.5   # Laplace smoothing on empirical frequencies
+    estimator: str = "plugin"  # "plugin" (occupancy) or "smoothed_gt" (unseen-species)
 
 
 class PredictiveAllocator:
@@ -83,29 +85,26 @@ class PredictiveAllocator:
         smoothed = raw + self.cfg.pseudocount
         return smoothed / smoothed.sum()
 
-    def _predicted_remaining_unique(self) -> float:
-        """E[number of additional unique templates over the rest of the workload]."""
-        k_remaining = self.cfg.k_total - self.queries_seen
-        if k_remaining <= 0:
-            return 0.0
-        if not self.template_hashes:
-            return float(k_remaining)  # no info -> assume all unique
-
-        p = self._empirical_distribution()
-        # E[u over k_total queries] under empirical p
-        u_total_pred = expected_unique_queries(p, self.cfg.k_total)
-        u_so_far = len(self.unique_templates)
-        # Predicted remaining unique = total - already seen, with non-negative floor
-        return max(1.0, u_total_pred - u_so_far)
-
     def _predicted_total_unique(self) -> float:
-        """E[u_total] under the empirical distribution observed so far.
+        """E[u_total] under the observed history.
 
-        Falls back to k_total (worst-case all unique) when too little data has
-        been seen to fit a distribution.
+        With ``estimator='plugin'`` (default) this is the occupancy estimate
+        ``sum_i[1-(1-p_i)^k]`` over the Laplace-smoothed empirical distribution.
+        With ``estimator='smoothed_gt'`` it is the Smoothed Good--Toulmin
+        unseen-species estimator, which corrects the plug-in's systematic
+        under-prediction of how many *new* templates the rest of the workload
+        will bring (clamped to ``[unique seen, k_total]``). Falls back to
+        ``k_total`` when too little data has been seen to fit a distribution.
         """
         if len(self.template_hashes) < 2:
             return float(self.cfg.k_total)
+        if self.cfg.estimator == "smoothed_gt":
+            counts = list(Counter(self.template_hashes).values())
+            u = predict_smoothed_gt(counts, n=self.queries_seen, k=self.cfg.k_total)
+            if u == u and u > 0:  # guard NaN / degenerate output
+                seen = len(self.unique_templates)
+                return float(min(max(u, seen), self.cfg.k_total))
+            # otherwise fall through to the plug-in estimate
         p = self._empirical_distribution()
         return expected_unique_queries(p, self.cfg.k_total)
 
@@ -151,7 +150,6 @@ class PredictiveAllocator:
             "query_idx": self.queries_seen,
             "unique_so_far": len(self.unique_templates),
             "eps_used": eps_used,
-            "predicted_remaining_unique": self._predicted_remaining_unique(),
             "remaining_budget": self.remaining_budget,
         })
 

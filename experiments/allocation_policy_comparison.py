@@ -257,14 +257,15 @@ def run_modeldriven_bandit(rng, draws, explore=0.2):
 POLICIES = {
     "naive": run_naive,
     "closed_form": run_closed_form,
+    "closed_form_sgt": run_closed_form_sgt,
     "closed_form_safe": run_closed_form_safe,
     "closed_form_rerelease": run_closed_form_rerelease,
     "bandit": run_bandit,
     "modeldriven_bandit": run_modeldriven_bandit,
     "oracle": run_oracle,
 }
-ORDER = ["naive", "closed_form", "closed_form_safe", "closed_form_rerelease",
-         "bandit", "modeldriven_bandit", "oracle"]
+ORDER = ["naive", "closed_form", "closed_form_sgt", "closed_form_safe",
+         "closed_form_rerelease", "bandit", "modeldriven_bandit", "oracle"]
 
 
 def run():

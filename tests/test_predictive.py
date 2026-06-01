@@ -71,3 +71,46 @@ class TestPredictiveAllocator:
         # Now allocator should return 0
         eps2 = alloc.next_epsilon(_q("A"))
         assert eps2 == 0.0
+
+
+# structurally-distinct templates (different aggregate/column), so the allocator
+# actually sees multiple unique templates -- needed to exercise the estimators
+_DISTINCT = [
+    parse_query("SELECT COUNT(*) FROM lineitem WHERE l_returnflag = 'R'"),
+    parse_query("SELECT SUM(l_quantity) FROM lineitem WHERE l_returnflag = 'R'"),
+    parse_query("SELECT AVG(l_extendedprice) FROM lineitem"),
+    parse_query("SELECT COUNT(*) FROM lineitem WHERE l_linestatus = 'O'"),
+]
+
+
+class TestEstimatorOption:
+    def test_estimator_default_is_plugin(self):
+        assert PredictiveConfig(total_budget=10.0, k_total=100).estimator == "plugin"
+
+    def test_smoothed_gt_runs_and_respects_budget(self):
+        # the smoothed-GT estimator is now selectable in the live allocator
+        alloc = PredictiveAllocator(PredictiveConfig(
+            total_budget=10.0, k_total=40, warmup_fraction=0.1, min_warmup=4,
+            estimator="smoothed_gt",
+        ))
+        consumed = 0.0
+        for i in range(40):
+            q = _DISTINCT[i % len(_DISTINCT)]
+            eps = alloc.next_epsilon(q)
+            assert eps == eps and eps >= 0.0  # finite, non-negative (no NaN)
+            consumed += eps
+            alloc.note_release(q, eps)
+        assert consumed <= 10.0 + 1e-6              # budget never exceeded
+        assert alloc.summary()["unique_templates"] >= 2  # really saw distinct templates
+
+    def test_smoothed_gt_uhat_is_finite_and_bounded(self):
+        # the SGT U_hat must be a finite, positive value within the horizon;
+        # at extreme extrapolation SGT diverges, so the allocator falls back to
+        # the plug-in -- either way the result stays usable.
+        a = PredictiveAllocator(PredictiveConfig(
+            total_budget=10.0, k_total=100, estimator="smoothed_gt"))
+        for i in range(8):
+            a.next_epsilon(_DISTINCT[i % len(_DISTINCT)])
+        u = a._predicted_total_unique()
+        assert u == u                  # not NaN
+        assert 0 < u <= 100 + 1e-6     # positive, within k_total
