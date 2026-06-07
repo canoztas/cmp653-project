@@ -13,7 +13,8 @@ import pytest
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
 from dpdb.analyzer import SensitivityResult
-from dpdb.middleware import DPMiddleware
+from dpdb.config import Config
+from dpdb.middleware import DPMiddleware, ExecutionMode
 from dpdb.parser import parse_query
 
 
@@ -68,3 +69,28 @@ class TestNoiseColumnTargeting:
         # Tiny epsilon -> huge noise -> the COUNT is almost surely not exactly 42.
         # The group key must be the untouched passthrough.
         assert noisy[0][1] == "X"
+
+
+class TestInvalidEpsilonRejected:
+    """Regression: a supplied epsilon must be finite and positive. epsilon=0 must
+    NOT silently become the default, and NaN/inf/negative must not corrupt the
+    ledger. Only an OMITTED epsilon (None) falls back to the configured default."""
+
+    def _mw(self):
+        cfg = Config.from_yaml()
+        cfg.privacy.total_epsilon = 100.0
+        return DPMiddleware(cfg, mode=ExecutionMode.NAIVE_DP)
+
+    @pytest.mark.parametrize("bad", [0, 0.0, -1.0, float("nan"), float("inf")])
+    def test_invalid_epsilon_errors_without_spending(self, bad):
+        mw = self._mw()
+        r = mw.execute("SELECT COUNT(*) FROM adult", epsilon=bad)
+        assert r.error is not None and "epsilon" in r.error.lower()
+        # ledger untouched (and not NaN)
+        assert mw.budget_summary()["consumed_epsilon"] == 0.0
+
+    def test_none_falls_back_to_default(self):
+        mw = self._mw()
+        r = mw.execute("SELECT COUNT(*) FROM adult", epsilon=None)
+        assert r.error is None
+        assert mw.budget_summary()["consumed_epsilon"] == mw.config.privacy.default_query_epsilon

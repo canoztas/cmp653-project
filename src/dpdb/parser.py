@@ -53,7 +53,22 @@ def parse_query(sql: str) -> ParsedQuery:
     if not isinstance(ast, exp.Select):
         raise ParseError("Only SELECT statements are supported")
 
-    # Reject subqueries
+    # Positive whitelist for the structure: reject anything that can amplify or
+    # hide a row's contribution and thus invalidate the sensitivity bound.
+    if ast.args.get("with") is not None or ast.find(exp.With, exp.CTE) is not None:
+        raise ParseError(
+            "WITH/CTE is not supported (a self-union CTE can amplify each row's "
+            "contribution while the sensitivity is still computed as 1)")
+    if ast.find(exp.Union, exp.Intersect, exp.Except) is not None:
+        raise ParseError("Set operations (UNION/INTERSECT/EXCEPT) are not supported")
+    if ast.args.get("distinct") is not None:
+        raise ParseError("SELECT DISTINCT is not supported")
+    if ast.args.get("offset") is not None or ast.find(exp.Offset) is not None:
+        raise ParseError(
+            "OFFSET is not supported (it would be applied on the true histogram "
+            "before noising)")
+
+    # Reject subqueries / derived tables
     subqueries = list(ast.find_all(exp.Subquery))
     if subqueries:
         raise ParseError("Subqueries are not supported")
@@ -153,6 +168,21 @@ def parse_query(sql: str) -> ParsedQuery:
         if limit <= 0:
             raise ParseError("LIMIT must be positive")
 
+    # A LIMIT without an explicit ORDER BY is an ill-defined top-k: the database
+    # would return an arbitrary subset, and the DP guarantee for top-k relies on
+    # ranking the NOISED aggregate. Require the analyst to state the order, and
+    # require that order to target an AGGREGATE column (ranking/truncating on a
+    # public group key is not a report-noisy-max selection).
+    if limit is not None:
+        if order_by_position is None:
+            raise ParseError(
+                "LIMIT requires an explicit ORDER BY on a SELECT aggregate "
+                "(top-k must rank on the noised value)")
+        agg_positions = {a.position for a in aggregates}
+        if order_by_position not in agg_positions:
+            raise ParseError(
+                "top-k ORDER BY must target an aggregate column, not a group key")
+
     return ParsedQuery(
         raw_sql=sql,
         ast=ast,
@@ -171,7 +201,10 @@ def _resolve_select_position(target: exp.Expression,
                              select_exprs: list[exp.Expression]) -> Optional[int]:
     """Map an ORDER BY target to its 0-based result-column index (or None)."""
     if isinstance(target, exp.Literal) and target.is_int:        # ORDER BY 2
-        return int(target.this) - 1
+        n = int(target.this)
+        if 1 <= n <= len(select_exprs):                          # reject 0 / out-of-range
+            return n - 1
+        return None
     tname = target.name if isinstance(target, exp.Column) else None
     tsql = target.sql()
     for i, se in enumerate(select_exprs):
@@ -189,27 +222,42 @@ def _resolve_select_position(target: exp.Expression,
 
 
 def _extract_aggregate(node: exp.Expression) -> Optional[AggregateInfo]:
-    """Extract aggregate info from a SELECT expression."""
+    """Extract aggregate info from a SELECT expression.
+
+    The projection must be the aggregate ITSELF (optionally aliased), never an
+    expression that merely *contains* one. Earlier this used ``node.find(agg)``,
+    which matched the inner SUM of ``1000*SUM(age)`` or ``COUNT(*) OVER ()`` and
+    then calibrated noise to the bare aggregate's sensitivity (Delta f=B_c) while
+    the released value actually had sensitivity ``1000*B_c`` (or leaked the whole
+    table via the window). We now require a direct, un-wrapped aggregate and
+    reject any nested/over-windowed/filtered aggregate explicitly.
+    """
     alias = None
     if isinstance(node, exp.Alias):
         alias = node.alias
         node = node.this
 
-    for agg_type in (exp.Count, exp.Sum, exp.Avg):
-        found = node.find(agg_type)
-        if found is not None:
-            func_name = type(found).__name__.upper()
-            if func_name not in SUPPORTED_AGGREGATES:
-                continue
-            return AggregateInfo(
-                func=func_name, column=_agg_column(found.this), alias=alias
-            )
-
-    if isinstance(node, (exp.Count, exp.Sum, exp.Avg)):
+    # A bare, directly-applied aggregate is the ONLY accepted aggregate form.
+    if isinstance(node, (exp.Count, exp.Sum, exp.Avg)) and not isinstance(node, exp.Window):
+        # Reject a windowed aggregate (e.g. SUM(x) OVER (...)) that sqlglot may
+        # attach as a 'over' arg on the function node itself.
+        if node.args.get("over") is not None:
+            raise ParseError(
+                f"Window/OVER aggregates are not supported: {node.sql()}")
         func_name = type(node).__name__.upper()
+        if func_name not in SUPPORTED_AGGREGATES:
+            return None
         return AggregateInfo(
             func=func_name, column=_agg_column(node.this), alias=alias
         )
+
+    # An aggregate nested inside another expression (arithmetic, window, FILTER,
+    # COALESCE, CASE, ...) has a DIFFERENT sensitivity than the bare aggregate and
+    # must be rejected, not silently mis-calibrated or treated as a group column.
+    if isinstance(node, exp.Window) or node.find(exp.AggFunc) is not None:
+        raise ParseError(
+            f"Aggregate must be a direct SELECT item (no arithmetic, window, "
+            f"FILTER, COALESCE, or CASE wrapping): {node.sql()}")
 
     return None
 

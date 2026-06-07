@@ -44,7 +44,8 @@ class BudgetLedger:
                  semantic_matcher=None,
                  staleness_tolerance: float = float("inf"),
                  update_rate: float = 0.0,
-                 update_invalidation_prob: float = 0.0):
+                 update_invalidation_prob: float = 0.0,
+                 update_seed: int = 0):
         self.total_epsilon = total_epsilon
         self.strategy = strategy
         self.consumed_epsilon = 0.0
@@ -60,6 +61,7 @@ class BudgetLedger:
         self.staleness_tolerance = staleness_tolerance  # tau (in logical query units)
         self.update_rate = update_rate                  # lambda (per logical step)
         self.update_invalidation_prob = update_invalidation_prob
+        self.update_seed = update_seed                  # per-trial seed for update RNG
         self._logical_time = 0                          # incremented per query
         self.expired_evictions = 0
         self.update_evictions = 0
@@ -79,8 +81,11 @@ class BudgetLedger:
         if self.update_rate > 0 and self.update_invalidation_prob > 0:
             import random
             if self._rng is None:
-                self._rng = random.Random(42)
-            # Poisson-like: probability of an update event in this step
+                # Seed from the per-trial update_seed so independent trials draw
+                # independent update streams (a fixed Random(42) made every trial
+                # share one update realization, collapsing the reported variance).
+                self._rng = random.Random(self.update_seed)
+            # Per-step Bernoulli: probability of an update event in this step
             if self._rng.random() < self.update_rate:
                 # An update occurred; invalidate a random fraction of cache
                 for t_hash, params in self._cache.items():
@@ -190,8 +195,13 @@ class BudgetLedger:
         """Workload-aware: use cache hits and amortized allocation."""
         t_hash = template_hash(extract_template(parsed))
 
-        # Track template frequency
-        self._template_counts[t_hash] = self._template_counts.get(t_hash, 0) + 1
+        # Track distinct EXACT species (template + WHERE literals), the unit the
+        # budget is actually charged per, so summary()['unique_templates'] equals
+        # u_k. Keying by the structural template alone under-counts: three queries
+        # differing only in a WHERE literal each cost epsilon but would collapse
+        # to a single structural template.
+        species = full_query_hash(parsed)
+        self._template_counts[species] = self._template_counts.get(species, 0) + 1
 
         # No cache hit (try_cache was called first), so we must allocate
         if requested_epsilon > self.remaining:

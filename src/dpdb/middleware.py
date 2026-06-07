@@ -1,11 +1,13 @@
 """Main DP middleware orchestrator."""
 
+import math
 import time
 from dataclasses import dataclass, field
 from enum import Enum
 from typing import Optional
 
 import numpy as np
+from sqlglot import exp
 
 from dpdb.analyzer import SensitivityResult, analyze_sensitivity
 from dpdb.budget import AllocationStrategy, BudgetExhausted, BudgetLedger
@@ -46,6 +48,7 @@ class DPMiddleware:
         staleness_tolerance: float = float("inf"),
         update_rate: float = 0.0,
         update_invalidation_prob: float = 0.0,
+        update_seed: int = 0,
         predictive_k_total: int = 100,
         predictive_warmup_fraction: float = 0.1,
     ):
@@ -69,6 +72,7 @@ class DPMiddleware:
                 staleness_tolerance=staleness_tolerance,
                 update_rate=update_rate,
                 update_invalidation_prob=update_invalidation_prob,
+                update_seed=update_seed,
             )
         elif mode == ExecutionMode.PREDICTIVE_DP:
             from dpdb.predictive import PredictiveAllocator, PredictiveConfig
@@ -116,7 +120,17 @@ class DPMiddleware:
         if self.mode == ExecutionMode.PREDICTIVE_DP and self.predictor is not None:
             eps = self.predictor.next_epsilon(parsed)
         else:
-            eps = epsilon or self.config.privacy.default_query_epsilon
+            # Fall back to the default ONLY when epsilon is omitted (None). A
+            # supplied epsilon must be a finite positive number: epsilon=0 must
+            # NOT silently become the default, and NaN/inf/negative must not be
+            # allowed to corrupt the budget ledger.
+            eps = self.config.privacy.default_query_epsilon if epsilon is None else epsilon
+            if not (isinstance(eps, (int, float)) and math.isfinite(eps) and eps > 0):
+                return QueryResult(
+                    columns=[], rows=[], epsilon_used=0.0,
+                    cache_hit=False, latency_ms=_elapsed(start),
+                    error=f"Invalid epsilon: must be finite and positive (got {epsilon!r})",
+                )
 
         # Cache hits short-circuit before budget allocation: they cost ε=0
         # and must succeed even when the predictor says the budget is dry.
@@ -159,28 +173,36 @@ class DPMiddleware:
                 error=str(e),
             )
 
-        # Execute true query. For a top-k query (ORDER BY/LIMIT) we must fetch the
-        # FULL histogram and select on the NOISY counts: letting the DB apply
-        # ORDER BY/LIMIT would select the top-k on the TRUE counts, leaking which
-        # groups crossed the cutoff. Stripping them keeps the selection a pure
-        # post-processing of the noised result, so no extra budget is charged.
-        exec_sql = sql
-        if parsed.limit is not None:
-            base = parsed.ast.copy()
+        # Execute true query. For ANY ORDER BY (with or without LIMIT) we must
+        # fetch the FULL histogram and order/select on the NOISED values: letting
+        # the DB apply ORDER BY on the TRUE counts would leak the true ranking
+        # through the row order even when the values are noised. We therefore
+        # strip ORDER BY and LIMIT whenever either is present, then re-apply both
+        # as post-processing on the noised result (no extra budget). LIMIT without
+        # ORDER BY is rejected at parse time. We also clamp SUM/AVG arguments to
+        # their public domain bound B_c IN the executed SQL, so the realized
+        # sensitivity can never exceed the Delta f the noise is calibrated to
+        # (otherwise out-of-bound data would silently break the DP guarantee).
+        base = parsed.ast.copy()
+        stripped = parsed.order_by_position is not None or parsed.limit is not None
+        if stripped:
             base.set("order", None)
             base.set("limit", None)
-            exec_sql = base.sql(dialect="postgres")
+        clamped = self._clamp_aggregate_columns(base, parsed.table)
+        exec_sql = base.sql(dialect="postgres") if (stripped or clamped) else sql
         columns, true_rows = self.db.execute_with_columns(exec_sql)
 
         # Add noise to each row's aggregate columns
         noisy_rows = self._add_noise(parsed, true_rows, sensitivities, allocated_eps)
 
-        # Top-k = post-processing on the noised result (ORDER BY noisy value, LIMIT k).
+        # Post-processing on the noised result: ORDER BY the noisy value, then
+        # (if present) LIMIT. Ordering is applied for ANY ORDER BY, not only the
+        # top-k case, so the released row order never reflects the true ranking.
+        if parsed.order_by_position is not None:
+            noisy_rows = sorted(
+                noisy_rows, key=lambda r: r[parsed.order_by_position],
+                reverse=parsed.order_desc)
         if parsed.limit is not None:
-            if parsed.order_by_position is not None:
-                noisy_rows = sorted(
-                    noisy_rows, key=lambda r: r[parsed.order_by_position],
-                    reverse=parsed.order_desc)
             noisy_rows = noisy_rows[:parsed.limit]
 
         # Cache result
@@ -198,6 +220,49 @@ class DPMiddleware:
             latency_ms=_elapsed(start),
             sensitivities=sensitivities,
         )
+
+    def _clamp_aggregate_columns(self, ast, table: str) -> bool:
+        """Rewrite SUM(c)/AVG(c) -> SUM(GREATEST(LEAST(c, B_c), 0)) for every
+        column c with a configured public bound B_c, so the executed aggregate
+        provably respects |c| <= B_c. Without this clamp, a value exceeding the
+        configured bound would make the true sensitivity larger than the
+        Delta f = B_c the Laplace noise is calibrated to, breaking the epsilon-DP
+        guarantee. All configured columns are non-negative quantities, so the
+        clamp range is [0, B_c]. The original output column name is preserved.
+        Returns True if any aggregate was rewritten.
+        """
+        changed = False
+        for agg in list(ast.find_all(exp.Sum, exp.Avg)):
+            col = agg.this
+            if not isinstance(col, exp.Column):
+                continue
+            bound = self.config.get_bound(table, col.name)
+            if bound is None:
+                continue
+            orig_name = agg.sql(dialect="postgres")
+            clamp = exp.Greatest(
+                this=exp.Least(
+                    this=col.copy(),
+                    expressions=[exp.Literal.number(bound)],
+                ),
+                expressions=[exp.Literal.number(0)],
+            )
+            # Preserve SQL NULL semantics: GREATEST/LEAST treat NULL as a missing
+            # value (LEAST(NULL,B)=B), which would turn a NULL into B and corrupt
+            # SUM/AVG. Guard with CASE so NULL passes through untouched and is
+            # excluded from the aggregate exactly as in the unclamped query.
+            agg.set("this", exp.Case(
+                ifs=[exp.If(
+                    this=exp.Is(this=col.copy(), expression=exp.Null()),
+                    true=exp.Null(),
+                )],
+                default=clamp,
+            ))
+            # Keep the released column's name stable for bare (un-aliased) aggregates.
+            if not isinstance(agg.parent, exp.Alias):
+                agg.replace(exp.alias_(agg.copy(), orig_name, quoted=True))
+            changed = True
+        return changed
 
     def _execute_exact(self, sql: str, start: float) -> QueryResult:
         columns, rows = self.db.execute_with_columns(sql)

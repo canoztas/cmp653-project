@@ -109,6 +109,81 @@ class TestInvalidQueries:
             parse_query("SELECT COUNT(DISTINCT l_returnflag) FROM lineitem")
 
 
+class TestSensitivityBypassRejected:
+    """Adversarial regression: crafted SQL that would slip past sensitivity
+    analysis (wrapping/windowing an aggregate, or amplifying contribution) must
+    be rejected at parse time, BEFORE any budget is spent."""
+
+    def test_arithmetic_wrapped_aggregate_rejected(self):
+        # 1000*SUM(age): true sensitivity is 1000*B_c, not B_c.
+        with pytest.raises(ParseError, match="direct SELECT item"):
+            parse_query("SELECT 1000 * SUM(age) FROM adult")
+
+    def test_window_count_rejected(self):
+        # COUNT(*) OVER () returns the true count in every one of N rows.
+        with pytest.raises(ParseError):
+            parse_query("SELECT COUNT(*) OVER () FROM adult")
+
+    def test_window_sum_rejected(self):
+        with pytest.raises(ParseError):
+            parse_query("SELECT SUM(age) OVER (PARTITION BY sex) FROM adult")
+
+    def test_coalesce_wrapped_aggregate_rejected(self):
+        with pytest.raises(ParseError, match="direct SELECT item"):
+            parse_query("SELECT COALESCE(SUM(age), 0) FROM adult")
+
+    def test_filter_aggregate_rejected(self):
+        with pytest.raises(ParseError):
+            parse_query("SELECT SUM(age) FILTER (WHERE sex = 'Male') FROM adult")
+
+    def test_cte_self_union_rejected(self):
+        # Each row contributes twice; sensitivity-1 accounting would be wrong.
+        with pytest.raises(ParseError, match="WITH|CTE"):
+            parse_query(
+                "WITH x AS (SELECT * FROM adult UNION ALL SELECT * FROM adult) "
+                "SELECT COUNT(*) FROM x")
+
+    def test_top_level_union_rejected(self):
+        with pytest.raises(ParseError):
+            parse_query("SELECT COUNT(*) FROM adult UNION ALL SELECT COUNT(*) FROM adult")
+
+    def test_select_distinct_rejected(self):
+        with pytest.raises(ParseError, match="DISTINCT"):
+            parse_query("SELECT DISTINCT sex FROM adult")
+
+
+class TestTopKBoundsRejected:
+    """Adversarial regression for the top-k parser surface."""
+
+    def test_order_by_ordinal_out_of_range_rejected(self):
+        # 2-column result, ORDER BY 3 -> would index past the row -> IndexError
+        # AFTER budget spend. Must reject at parse.
+        with pytest.raises(ParseError):
+            parse_query("SELECT education, COUNT(*) FROM adult GROUP BY education ORDER BY 3")
+
+    def test_order_by_zero_rejected(self):
+        # ORDER BY 0 would map to Python index -1 (last column).
+        with pytest.raises(ParseError):
+            parse_query("SELECT education, COUNT(*) FROM adult GROUP BY education ORDER BY 0")
+
+    def test_limit_on_group_key_rejected(self):
+        # top-k must rank on an aggregate, not a public group key.
+        with pytest.raises(ParseError, match="aggregate"):
+            parse_query("SELECT sex, COUNT(*) FROM adult GROUP BY sex ORDER BY sex LIMIT 1")
+
+    def test_offset_rejected(self):
+        with pytest.raises(ParseError, match="OFFSET"):
+            parse_query(
+                "SELECT education, COUNT(*) AS c FROM adult GROUP BY education "
+                "ORDER BY c DESC LIMIT 5 OFFSET 3")
+
+    def test_valid_topk_still_parses(self):
+        q = parse_query(
+            "SELECT education, COUNT(*) AS c FROM adult GROUP BY education "
+            "ORDER BY c DESC LIMIT 5")
+        assert q.limit == 5 and q.order_by_position == 1
+
+
 class TestAggregatePosition:
     """Regression tests for the column-ordering privacy bug: each aggregate's
     SELECT-list position must be recorded so the noise mechanism targets the

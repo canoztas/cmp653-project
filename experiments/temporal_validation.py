@@ -61,6 +61,7 @@ def run_temporal_trial(
         staleness_tolerance=staleness_tolerance,
         update_rate=update_rate,
         update_invalidation_prob=update_invalidation_prob,
+        update_seed=seed,
     )
     for sql in queries:
         try:

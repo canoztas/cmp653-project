@@ -12,10 +12,11 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
 import numpy as np
+import pytest
 
 from dpdb.config import Config
 from dpdb.middleware import DPMiddleware, ExecutionMode
-from dpdb.parser import parse_query
+from dpdb.parser import ParseError, parse_query
 
 TOPK = "SELECT education, COUNT(*) AS c FROM adult GROUP BY education ORDER BY c DESC LIMIT 5"
 
@@ -78,3 +79,44 @@ class TestTopKMechanism:
         r = DPMiddleware(Config.from_yaml(), mode=ExecutionMode.EXACT).execute(TOPK)
         vals = [row[1] for row in r.rows]
         assert len(r.rows) == 5 and vals == sorted(vals, reverse=True)
+
+
+class TestOrderByLimitLeak:
+    """Regression: ORDER BY (with or without LIMIT) must rank on the NOISED value,
+    and a LIMIT without an explicit ORDER BY is rejected (ill-defined top-k)."""
+
+    def _mw(self, mode, B=10000.0):
+        cfg = Config.from_yaml()
+        cfg.privacy.total_epsilon = B
+        return DPMiddleware(cfg, mode=mode)
+
+    def test_limit_without_order_by_is_rejected(self):
+        with pytest.raises(ParseError):
+            parse_query("SELECT sex, COUNT(*) FROM adult GROUP BY sex LIMIT 2")
+
+    def test_order_by_without_limit_returns_all_rows_sorted_on_noise(self):
+        # No LIMIT: every group is returned, ordered by the NOISED count.
+        q = "SELECT education, COUNT(*) AS c FROM adult GROUP BY education ORDER BY c DESC"
+        r = self._mw(ExecutionMode.WORKLOAD_DP).execute(q, epsilon=1.0)
+        assert r.error is None
+        vals = [row[1] for row in r.rows]
+        assert vals == sorted(vals, reverse=True)
+        # all groups present (nothing truncated)
+        n_groups = len(DPMiddleware(Config.from_yaml(), mode=ExecutionMode.EXACT)
+                       .execute("SELECT education, COUNT(*) FROM adult GROUP BY education").rows)
+        assert len(r.rows) == n_groups
+
+    def test_order_by_without_limit_is_noise_dependent(self):
+        # With huge noise the released ordering deviates from the true-count order
+        # in at least some runs -> the sort is on the noised value, not the true one.
+        q = "SELECT education, COUNT(*) AS c FROM adult GROUP BY education ORDER BY c ASC"
+        mw = self._mw(ExecutionMode.NAIVE_DP)
+        true_order = [row[0] for row in
+                      DPMiddleware(Config.from_yaml(), mode=ExecutionMode.EXACT)
+                      .execute(q).rows]
+        deviated = 0
+        for _ in range(40):
+            got = [row[0] for row in mw.execute(q, epsilon=0.0005).rows]
+            if got != true_order:
+                deviated += 1
+        assert deviated > 0

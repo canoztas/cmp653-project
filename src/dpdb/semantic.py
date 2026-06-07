@@ -16,12 +16,14 @@ The two methods are complementary:
 - Tree kernel is exact/deterministic but only captures structural matches.
 - Embedding catches semantic similarity but is approximate.
 
-**Privacy note:** Returning a cached result for a "similar" query that is
-not formally equivalent is NOT zero-cost under DP — the cached answer
-was tuned to a different query. We therefore use semantic similarity only
-to detect *structurally equivalent* queries that the syntactic hash missed
-(e.g., commutative reordering, double negation), where post-processing
-gives the same DP guarantee.
+**Privacy vs. correctness note:** Returning a cached result for a "similar"
+but non-equivalent query is still **zero extra privacy cost** — reusing a DP
+output is post-processing regardless of which query it is handed back for, so
+no budget is spent. What breaks is **correctness**: the cached answer belongs
+to a *different* query, so it is simply wrong (a utility/semantic failure, not
+a privacy one). We therefore use semantic similarity only to detect
+*structurally equivalent* queries the syntactic hash missed (e.g., commutative
+reordering, double negation), where the answer is also correct.
 """
 
 from __future__ import annotations

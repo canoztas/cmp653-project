@@ -46,3 +46,26 @@ class TestTemplateExtraction:
         t1 = template_hash(extract_template(q))
         t2 = template_hash(extract_template(q))
         assert t1 == t2
+
+
+class TestExactCacheKeyNoCollision:
+    """Regression: the param hash must NOT collide on literals that flatten to the
+    same naive delimiter-join, or on a number vs. its string form."""
+
+    def test_no_collision_on_delimiter_in_literal(self):
+        # 'a|b'+'c'  vs  'a'+'b|c'  both naive-join to "a|b|c" -> must still differ
+        a = parse_query("SELECT COUNT(*) FROM adult WHERE education = 'a|b' AND sex = 'c'")
+        b = parse_query("SELECT COUNT(*) FROM adult WHERE education = 'a' AND sex = 'b|c'")
+        assert full_query_hash(a) != full_query_hash(b)
+        assert not is_exact_match(a, b)
+
+    def test_number_and_string_literal_differ(self):
+        a = parse_query("SELECT COUNT(*) FROM adult WHERE age = 1")
+        b = parse_query("SELECT COUNT(*) FROM adult WHERE age = '1'")
+        assert full_query_hash(a) != full_query_hash(b)
+
+    def test_exact_repeat_still_matches(self):
+        a = parse_query("SELECT COUNT(*) FROM adult WHERE education = 'a' AND sex = 'b|c'")
+        b = parse_query("SELECT COUNT(*) FROM adult WHERE education = 'a' AND sex = 'b|c'")
+        assert full_query_hash(a) == full_query_hash(b)
+        assert is_exact_match(a, b)

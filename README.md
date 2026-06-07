@@ -1,311 +1,160 @@
-# DP-SQL: A Statistical Model of Privacy-Budget Consumption in Repeated Aggregate SQL Workloads
+# 🔮 Forecasting Privacy-Budget Consumption in Repeated DP-SQL Workloads
 
-**CMP653 Database Management Systems Project — Hacettepe University**
-Author: Refik Can Öztaş (N25142279)
+**CMP653 — Database Management Systems · Hacettepe University**
+Refik Can Öztaş (N25142279)
 
-A Python middleware that intercepts aggregate SQL queries (COUNT, SUM, AVG), adds calibrated Laplace noise for differential privacy, and uses **a closed-form analytical model of budget consumption** to:
-1. predict workload cost before deployment,
-2. drive a model-based **adaptive budget allocator**,
-3. cross-check empirical privacy leakage against theoretical bounds.
+![tests](https://img.shields.io/badge/tests-134%20passing-brightgreen) ![python](https://img.shields.io/badge/python-3.10%2B-blue) ![dp](https://img.shields.io/badge/privacy-differential-purple) ![paper](https://img.shields.io/badge/paper-12pp-orange)
 
-> **▶ Live demo:** `pip install flask duckdb && python demo/app.py` → open
-> http://127.0.0.1:5000 to watch each query flow through the real pipeline
-> step by step (parse → template → cache → ε allocation → Laplace noise →
-> ledger) with a live budget meter, across all six execution modes. See
-> [`demo/README.md`](demo/README.md).
+A differentially private SQL middleware that adds calibrated noise to `COUNT` / `SUM` / `AVG` queries — **plus a simple formula that predicts how much privacy budget a workload will spend _before you run a single query_.**
 
----
+> **▶ Try it live:** `pip install flask duckdb && python demo/app.py` → http://127.0.0.1:5000
+> Watch every query flow through the **real** pipeline step by step, with a live budget meter, in English or Turkish.
 
-## The problem
-
-Aggregate SQL queries like `COUNT`, `SUM`, and `AVG` look harmless — they only ever return a single number, never an individual row. But two overlapping aggregates can quietly unmask one person: ask "how many patients are HIV-positive?" and then "how many patients *other than Alice* are HIV-positive?", and the difference between the two answers reveals Alice's status. Differential privacy stops this by adding calibrated noise to every answer, but each noisy answer spends a slice of a finite **privacy budget** — and on a busy dashboard that budget drains fast.
-
-## The idea
-
-The amount of budget a workload spends is a *structural property of the workload itself*, not of the database. If you know how often each query template tends to repeat, you can predict — in closed form, before running a single query — how much budget the workload will consume and how much accuracy you can buy with it. Exact-repeat caching (reuse a noisy answer for free) is not a separate trick here; it is just the extreme case where every query is identical.
-
-## How it works
-
-- **The closed-form model.** Given a distribution `{p_i}` over query templates and a workload of `k` queries, the expected number of *distinct* templates that actually run is `E[u_k] = Σ_i [1 − (1 − p_i)^k]`. Since you only pay budget the first time a template is seen, the expected budget is `E[ε_wa] = ε_q · E[u_k]` (per-query budget × distinct templates), and the savings versus naive accounting is `S(k) = 1 − E[u_k]/k`. At high skew this approaches the `1 − 1/k` caching limit; at uniform skew it collapses to naive composition (you pay for every query).
-- **The middleware pipeline.** Each incoming query is parsed and validated against the supported aggregate subset, hashed by (template, parameters), and checked against the cache. A hit is returned for free (post-processing, zero budget cost); a miss is charged `ε_q`, executed, perturbed with Laplace noise, and stored.
-- **The predictive allocator.** Instead of fixing the per-query budget up front, the allocator estimates the distinct-template count `Û` at runtime and sets `ε_q = B / Û` (total budget over expected unique queries), spreading the budget to minimize error — and explicitly rejecting late queries once the budget is exhausted rather than silently lying.
-- **The temporal extension.** Real data changes, so cached answers go stale. A staleness tolerance `τ` (how long a cached answer stays valid) and a Poisson update rate `λ` (how fast data changes) feed into the same budget expression, so freshness requirements are priced directly into the forecast.
-
-## What we did, step by step
-
-1. Reframed the contribution from "caching saves budget" to "a model that *predicts* budget consumption from the template distribution," with caching as a corollary.
-2. Derived the closed-form model — `E[u_k]`, the budget `ε_q · E[u_k]`, and the savings ratio `S(k)` — with proofs and two clean limiting cases.
-3. Added a temporal extension that couples budget to data freshness via staleness `τ` and update rate `λ`.
-4. Built a unit-tested DP-SQL middleware over DuckDB/PostgreSQL with four execution modes (exact, naive DP, workload-aware DP, temporal DP).
-5. Designed a predictive online allocator that sets `ε_q = B/Û` from the model's live estimate.
-6. Ran a 4,155-trial validation campaign across Zipf-skewed workloads, four privacy levels, and TPC-H (SF=1 and SF=10) plus the Adult dataset.
-7. Stress-tested leakage with single-query and shadow-model membership inference and a five-level differencing/reconstruction attack against theoretical bounds.
-8. Tested an AI/AST semantic cache and reported it as an honest negative — structural similarity is not query equivalence.
+<p align="center">
+  <img src="demo/screenshots/02_workload_full.png" width="92%" alt="Live DP-SQL pipeline demo"><br>
+  <em>The interactive demo runs the real middleware and narrates every step — parse, cache, noise, budget ledger — live.</em>
+</p>
 
 ---
 
-## What This Project Is
+## 🤔 The problem, in one breath
 
-The milestone version framed exact-repeat caching as the contribution. The instructor (correctly) flagged that as a trivial consequence of DP's post-processing property. The final version reframes:
+A single `COUNT` looks harmless — it returns one number, never a row. But ask *"how many patients are HIV-positive?"* and then *"how many **other than Alice**?"*, and the difference unmasks Alice. **Differential privacy** stops this by adding noise to every answer — but each answer spends a slice of a fixed **privacy budget**, and on a busy dashboard that budget drains fast. When it's gone, no more queries.
 
-> **Caching is a mechanism. The contribution is the *analytical model that predicts when and by how much caching helps*, instantiated in a working middleware over PostgreSQL/DuckDB and TPC-H/Adult.**
+## 💡 The one idea (no math required)
 
-Three concrete deliverables sit under that frame:
+Real dashboards **repeat**: the same tiles refresh on a schedule, the same drill-downs run again and again. An **exact repeat is free** — you can hand back the noisy answer you already computed at no extra privacy cost.
 
-| # | Deliverable | Lives in | Novelty |
-|---|-------------|----------|---------|
-| 1 | **Analytical model** linking workload structure → privacy budget | `src/dpdb/model.py` + `report/final_report.tex` §4 | Adapts occupancy/coupon-collector theory to DP-SQL budget; closed-form for arbitrary Zipf $\alpha$ |
-| 2 | **Temporal extension** with staleness $\tau$ + update rate $\lambda$ | `src/dpdb/budget.py` (temporal hooks) + paper §5 | First DP-SQL formulation that couples budget with data freshness |
-| 3 | **Predictive budget allocator** built on the model | `src/dpdb/predictive.py` + paper §10 | Sets $\eps_q$ at runtime from a forecast of future workload consumption; we frame the forecast as the classic **unseen-species** problem and show a Smoothed Good-Toulmin estimator ~halves the prediction error vs the plug-in (`src/dpdb/predictors.py`) |
+So the budget isn't driven by *how many* queries you ask — it's driven by **how many _distinct_ queries** you ask. And because repetition is a property of the *workload*, not the data, you can **forecast the spend in advance**.
 
-Plus three honest experimental findings (the kind of negative results that make a paper credible):
+> **That forecast — closed-form, before execution — is the contribution.** Caching is a known trick; *predicting its budget impact ahead of time* is the new part.
 
-| # | Finding | Why it's interesting |
-|---|---------|-----------------------|
-| A | **Semantic L2 cache via Tree Kernel + AST Embedding** gives 90% budget savings BUT wrong answers when the matched queries are not alpha-equivalent | First measured trade-off; warns against naive "AI-powered DP cache" designs |
-| B | **Workload-level shadow-model MIA AUC** stays at 0.14–0.58, well below the cumulative-$\eps$ bound of 1.0 | Cumulative-budget upper bounds are loose for realistic multi-query attacks; signal-to-noise is governed by per-query $\eps$, not total |
-| C | **Model is dataset-scale-independent** (SF=1 vs SF=10 within 0.03 units) and **$\eps_q$-independent** (cancels structurally) | The model captures workload structure, not data scale—useful for capacity planning before deployment |
+<details>
+<summary>📐 …okay, one formula (click to expand)</summary>
 
----
-
-## Baselines: what we beat, and what we do differently
-
-We are honest about both — on some axes we **beat** the baselines; on the core axis we do something **none of them does**.
-
-**What we beat.**
-- **Naive composition** (the standard per-query DP-SQL accounting): up to **100× less budget** on repetitive workloads (W1) — and, unlike naive, we *predict* the saving in closed form *before* running a query.
-- **A deployed DP engine — OpenDP SmartNoise-SQL** (`experiments/realsystem_baseline.py`): on 100 identical COUNT queries it spends the full **ε = 100.0** (it has no exact-repeat caching) where workload-aware accounting spends **1.0** — a **100× gap against a real library**, not an internal baseline. On genuinely all-distinct queries we honestly **tie** (no repetition to exploit). Both use basic composition here; SmartNoise's tighter Rényi accounting would lower *both* rates and composes with the caching.
-
-**What we do that the baselines don't.**
-- **Forecast budget consumption a-priori.** No prior DP-SQL system (PINQ, Chorus, PrivateSQL, APEx) predicts, in closed form and before execution, how much budget a *repeated* workload will spend. We do — `E[ε] = ε_q · E[u_k]` — and we validate it on **real production-derived traces** (Redbench, below).
-- **DP caches (Turbo, CacheDP)** save budget *reactively* and generalize across *overlapping* queries — where they **beat us, and we concede it**. But they emit no closed-form forecast of a workload's consumption. Our contribution is the **forecasting layer**, not the caching mechanism.
-- **Learned allocators (BGTplanner)** optimize from an observed-utility reward — exactly what DP hides at serve time; our forecast reads only *public* workload structure.
-
-**Real-workload validation (Redbench).** Beyond the synthetic Zipf sweep, we validate on **Redbench** (`experiments/redbench_validation.py`) — 30 analytical SQL workloads synthesized from Amazon Redshift's **Redset** production query traces. Findings: real workloads span **0–98% repetition**, are **heavy-tailed** (fitted Zipf α ∈ [0, 3], mean 0.84 — which *brackets* our synthetic sweep), the closed form **tracks the realized budget savings**, and a smoothed Good-Toulmin estimator **halves** the plug-in's prefix-forecast error. This closes the "synthetic-only" gap.
-
-> **Bottom line:** we don't claim to universally out-perform every system. We **beat** naive composition and a deployed engine on budget; we **tie** where there's no repetition; we **concede** the overlapping-query savings of DP caches; and we are the **only** one of these to *forecast* a repeated workload's budget from its structure, in closed form, before execution — validated on real traces.
-
----
-
-## Headline Numbers
-
-Full benchmark campaign: **4,155 core trials, ~150K queries, six experimental sweeps**.
-
-### Budget consumption (k=100, total ε=100, 30 trials/cell)
-
-| Workload | Naive ε | Workload-aware ε | Savings | Predicted by model |
-|----------|---------|-------------------|---------|----------------------|
-| W1 Repetitive (1 template) | 100.0 | 1.0 | **100×** | $E[u_k]=1$, $S(k)=1-1/k$ |
-| W2 TPC-H returnflag (Zipf α=0.5) | 100.0 | 3.0 | 33× | $E[u_k]\approx 3$ |
-| W2 TPC-H priority (Zipf α=1.0) | 100.0 | 5.0 | 20× | $E[u_k]\approx 5$ |
-| W2 Adult Zipf α=1.0 | 100.0 | 7.0 | 14.3× | $E[u_k]\approx 7$ |
-| W3 Uniform | 100.0 | 7.0 | 14.3× | $E[u_k]= m=7$ (saturated) |
-| W4 Drill-down (no repeats) | 100.0 | 100.0 | 1× | $E[u_k]=k$ (model correctly predicts no savings) |
-
-### Model accuracy
-
-- **Main grid (α × k, 30 trials × 24 cells):** model matches empirical mean within `<3%` in **21/24 cells**
-- **Cross-scale (SF=1 vs SF=10, 60M lineitem rows):** identical empirical $E[u_k]$ within 0.03 units
-- **Epsilon sweep (ε ∈ {0.1, 0.5, 1.0, 2.0}):** model is $\eps_q$-independent, confirmed across 480 trials
-
-### Privacy leakage
-
-- **Single-query MIA AUC** matches theoretical $e^\eps/(1+e^\eps)$ within ≤1%
-- **Reconstruction error** (mean) scales as $1.5/\eps$ as predicted
-- **Workload-level shadow-model MIA AUC** = 0.14–0.58 (much lower than the cumulative bound 1.0). The single-query attacks track their per-query bounds; the workload-level attack stays near chance, exposing the looseness of the cumulative bound (an honest negative).
-
-### Allocation policy (Zipf, m=20, k=100, B=10, 60 trials)
-
-- **Safe closed-form `ε_q = B/m`**: answers **100%** of queries at fresh-release MAE **2.0**, vs an ε-greedy budget bandit's **3.8** at the same 100%-answered rate (~1.9×, gap ≳9× the standard error, adversarially verified across 108 configs). It reaches the bandit's best-case operating point at **zero exploration cost**; only a `u_k` forecast (oracle, MAE 1.6) safely goes lower.
-- The **predictive allocator** (`ε_q = B/Û`) lowers per-query MAE by up to ~17% at low skew, but the gain is statistically significant only for α ≤ 0.5 (paired t-test) — reported honestly as a low-skew result.
-
----
-
-## Project Components
-
-The repository is a complete artifact: every figure, table, and number in the paper has a script that produces it.
+If each distinct query *i* recurs with probability `p_i`, the expected number of **distinct** queries in a length-`k` workload is
 
 ```
-src/dpdb/
-  model.py          R2 analytical model: E[u_k], savings ratio, temporal extension
-  predictive.py     Online predictive budget allocator built on the model
-  predictors.py     Alternative u_k estimators (plug-in, Good-Toulmin, Smoothed-GT, Chao1)
-  semantic.py       AI/AST layer: Tree Kernel + sentence-transformer embedding
-  budget.py         Privacy budget ledger (4 strategies, temporal hooks)
-  middleware.py     Orchestrator with 6 execution modes
-  parser.py         sqlglot-based SQL parser/validator
-  analyzer.py       Sensitivity analysis (COUNT=1, SUM/AVG=bound)
-  mechanisms.py     Laplace mechanism
-  template.py       Exact-match template extraction & hashing
-  db.py             DuckDB + PostgreSQL backends
-  demo.py           Step-by-step REPL trace
-  cli.py            Interactive query interface
+E[u_k] = Σ_i ( 1 − (1 − p_i)^k )
+```
 
-experiments/
-  model_validation.py        Main alpha-grid validation (720 trials)
-  extended_sweeps.py         Alpha up to 10, eps sweep, k up to 500
-  sf10_validation.py         SF=1 vs SF=10 cross-scale validation
-  full_campaign.py           6 workloads × 4 eps × 3 modes × 30 trials = 2160
-  leakage.py                 Single-query MIA + reconstruction
-  workload_leakage.py        Shadow-model MIA across W1–W4 (R4 closure)
-  temporal_validation.py     Tau-sweep + lambda-sweep, 30 trials
-  semantic_validation.py     L1 vs L2 semantic cache (honest negative)
-  predictive_comparison.py   Predictive vs fixed vs naive (new mechanism)
-  redbench_validation.py     Real-workload validation on Redbench production-derived traces
-  realsystem_baseline.py     Head-to-head vs OpenDP SmartNoise-SQL (deployed DP engine)
-  apriori_feasibility_case.py  A-priori (alpha,beta) feasibility verdict vs reactive baselines
-  unobservable_reward_case.py  Identifiability: why DP hides the reward a learned allocator needs
-  aggregate_all_results.py   Combine all CSVs → results/REPORT.md
+`(1−p_i)^k` is the chance query *i* never appears; one minus that is the chance it appears at least once. You only pay budget the first time each distinct query is seen, so the expected spend is `ε_q · E[u_k]` and the savings vs. naïve accounting is `S(k) = 1 − E[u_k]/k`.
 
-report/
-  final_report.tex            12-section paper + appendix, 6 embedded figures, 44 references
-  response_to_reviewer.md     Comment-by-comment mapping of instructor feedback
-  R2_model_sketch.md          Math derivation + limit checks for the model
-  milestone_report.tex        Original milestone (kept for reference)
+**Worked example.** 3 dashboard tiles asked 70% / 20% / 10% of the time, refreshed 100× → `E[u_k] ≈ 3`. You pay for ~3 distinct queries, not 100 refreshes — **97% saved**, and the formula says so before anything runs.
+</details>
 
-tests/  (101 unit tests, all passing)
-  test_parser.py    test_mechanisms.py  test_budget.py    test_template.py
-  test_semantic.py  test_model.py       test_predictive.py
-  test_predictors.py  test_allocation_policy.py
+---
+
+## 🆕 What's new (and what isn't)
+
+We're careful to claim only what we can show:
+
+| | |
+|---|---|
+| ✅ **New capability** | A **before-execution** forecast of a repeated workload's budget — to our knowledge the first for DP-SQL. From public structure alone (no query run), it reports the **expected spend**, a **hard completion guarantee** (the safe `ε_q = B/m` sizing never overruns), and a **per-release accuracy** verdict. |
+| ✅ **Measured improvement** | On **30 real-trace workloads** (Redbench, from Amazon Redshift logs), forecasting the full workload from only its **first half** cuts the prediction error by **45%** (0.22 → 0.12) over the naïve plug-in. |
+| 🤝 **On par, not ahead** | DP caches (Turbo, CacheDP) reach the same savings *reactively*; on the raw number we're **level, not better**. Our edge is the forecast they don't expose, not a bigger multiplier. |
+| ❌ **We do _not_ claim** | to beat deployed DP caches, or that exact-repeat caching is novel. |
+
+**Two cases the forecast handles that reactive systems don't:**
+1. **Size before you spend.** *"Will this month's dashboard finish within budget at the target accuracy?"* — answered at `t=0`, before any query runs. Reactive systems only learn this by spending budget query-by-query.
+2. **Plan from a prefix.** Predict a whole workload's cost from its first half (the Redbench result above).
+
+---
+
+## 🎬 See it live
+
+```bash
+pip install flask duckdb        # numpy / sqlglot come with the project
+python demo/app.py              # → http://127.0.0.1:5000
+```
+
+The page animates **exactly the steps `DPMiddleware.execute()` takes** — it drives the real ledger, cache, and noise, so it *is* the real system, narrated. Pick a **mode** (exact, naïve, workload-aware, semantic, temporal, predictive) and a **workload preset** (W1 repetitive, W2 parametric, W4 drill-down) and watch the budget deplete, cache hits go free, and the predictive allocator adapt on the fly.
+
+<p align="center">
+  <img src="demo/screenshots/01_overview.png" width="49%" alt="Demo overview">
+  <img src="demo/screenshots/03_predictive.png" width="49%" alt="Predictive mode"><br>
+  <em>Left: the interface (query box, modes, workload presets). Right: predictive mode adapting ε per query.</em>
+</p>
+
+Plain-language explanations sit under every step (EN/TR toggle), with a searchable glossary. See [`demo/README.md`](demo/README.md).
+
+---
+
+## 📊 Results at a glance
+
+**Budget saved vs. naïve composition** (k=100, 30 trials):
+
+| Workload | Saved | Why |
+|---|---|---|
+| Repetitive (1 tile) | **100×** | one distinct query |
+| Parametric / Zipf pools | **14–33×** | a handful of distinct queries |
+| Drill-down (all unique) | **1× (none)** | the model *correctly predicts* no savings |
+
+**Forecast accuracy**
+- Matches the realized budget within **< 3%** in **21 / 24** validation cells.
+- **Scale-invariant** (6M vs 60M rows agree within 0.03) and **budget-invariant** — so you can plan capacity before deploying.
+- **Headline (real traces):** prefix forecast cuts error **45%** (0.22 → 0.12) on Redbench.
+
+**Allocation** — the safe `ε_q = B/m` allocator answers **100%** of queries at MAE **2.0** vs an ε-greedy bandit's **3.8** (the bandit pays an *exploration tax* to reach the point we compute in closed form).
+
+> Full campaign: **~8,000 trials across 13 scripts**; every number has a script that reproduces it.
+
+---
+
+## 🧱 How it works
+
+```
+query → parse & validate → hash (cache key) → cache?
+                                                ├─ hit  → return noisy answer  (FREE, ε = 0)
+                                                └─ miss → sensitivity → spend ε_q → Laplace noise → cache
+```
+
+- **Middleware** ([`src/dpdb/middleware.py`](src/dpdb/middleware.py)) — six execution modes over DuckDB / PostgreSQL.
+- **The model** ([`src/dpdb/model.py`](src/dpdb/model.py)) — the closed-form forecast + its limits, with proofs and tests.
+- **Predictive allocator** ([`src/dpdb/predictive.py`](src/dpdb/predictive.py)) — estimates the distinct-query count live and sets `ε_q = B/Û`.
+- **Safety** — `SUM`/`AVG` are clamped to public bounds inside the SQL; the parser rejects anything that could amplify or hide a row's contribution (window functions, self-union CTEs, arithmetic-wrapped aggregates, `OFFSET`, …).
+
+**Honest negatives** (the kind that make a project credible):
+- A semantic "AI cache" (tree-kernel + embedding) saves budget but returns **wrong** answers — similarity ≠ equivalence. Reported as a cautionary result.
+- `GROUP BY` / top-k guarantees assume a **public, fully enumerated** key domain — a stated scope boundary, not hidden.
+- A workload-level membership-inference probe was **inconclusive** (too few sequences) — reported as a negative, not spun as a finding.
+
+---
+
+## 🚀 Quick start
+
+```bash
+pip install -e ".[dev]"            # install
+python -m pytest tests/ -q         # 134 passing
+python -m dpdb.model               # model self-check (limit cases)
+python demo/app.py                 # interactive demo
+```
+
+Reproduce an experiment:
+```bash
+python experiments/model_validation.py    --trials 30     # main grid
+python experiments/redbench_validation.py                 # real-trace headline
+python experiments/aggregate_all_results.py               # → results/REPORT.md
 ```
 
 ---
 
-## Six Execution Modes
+## 🗂️ Repo layout
 
-| Mode | Cache | Adaptive ε? | Use case |
-|------|-------|-------------|----------|
-| `EXACT` | none | n/a | Non-private gold standard |
-| `NAIVE_DP` | none | no | PINQ-style textbook baseline |
-| `WORKLOAD_DP` | exact match (L1) | no | Repetitive dashboards, exact reuse |
-| `TEMPORAL_DP` | L1 + staleness/update hooks | no | Streaming data, bounded freshness |
-| `SEMANTIC_DP` | L1 + L2 semantic (Tree Kernel + AST Embedding) | no | Approximate answers OK |
-| `PREDICTIVE_DP` | L1 | **yes** (model-driven) | Unknown workload, want to use full budget |
-
----
-
-## AI / NLP Components (Section 8 of the Paper)
-
-A semantic L2 cache layer was added on top of the exact-match L1 cache, combining two complementary similarity tools:
-
-- **Tree Kernel** (Collins & Duffy 2001): counts shared subtrees between two SQL ASTs. Deterministic, no training required, captures structural equivalence.
-- **AST Embedding** via `sentence-transformers` (`all-MiniLM-L6-v2`): produces a 384-dim dense representation of the canonicalized AST. Captures higher-level semantic similarity, in the spirit of CodeBERT and GraphCodeBERT.
-
-A query is accepted as a semantic cache match only if both scores cross conservative thresholds ($K_{\mathrm{norm}} \geq 0.95$ and cosine $\geq 0.98$).
-
-**Honest finding (reported in the paper):** semantic matching is dangerous as a free DP cache. Two queries can be structurally near-identical (same template, different literals) and still have very different true answers. The semantic L2 cache reused 80% of budget but returned wrong values by thousands of count units. Future work: pair similarity with a symbolic equivalence prover before admitting a match.
-
----
-
-## Reproducibility: Figure-to-Script Mapping
-
-| Paper artifact | Script | Output |
-|----------------|--------|--------|
-| Table 1 (Limit A/B verification) | `python3 -m dpdb.model` | console |
-| Table 2 (main grid validation) | `experiments/model_validation.py` | `results/model_validation/*.csv,*.pdf` |
-| Extended alpha sweep table | `experiments/extended_sweeps.py` | `results/extended/extended_alpha.{csv,pdf,png}` |
-| Epsilon sweep table | `experiments/extended_sweeps.py` | `results/extended/epsilon_sweep.csv` |
-| Large-k saturation figure | `experiments/extended_sweeps.py` | `results/extended/extended_large_k.{pdf,png}` |
-| Cross-scale (SF=1 vs SF=10) | `experiments/sf10_validation.py` | `results/sf10/sf10_validation.{csv,pdf,png}` |
-| Full benchmark grid | `experiments/full_campaign.py` | `results/full_campaign/full_campaign_SF1.csv` + 4 figs |
-| Temporal regime | `experiments/temporal_validation.py` | `results/temporal/temporal_validation.{csv,pdf,png}` |
-| Single-query MIA AUC | `experiments/leakage.py` | `results/leakage/mia_*.{csv,pdf,png}` |
-| Reconstruction error | `experiments/leakage.py` | `results/leakage/reconstruction_*.{csv,pdf,png}` |
-| Shadow-model MIA across W1–W4 | `experiments/workload_leakage.py` | `results/workload_leakage/*.{csv,pdf,png}` |
-| Semantic L2 cache table | `experiments/semantic_validation.py` | `results/semantic/semantic_validation.{csv,pdf,png}` |
-| Predictive allocator table | `experiments/predictive_comparison.py` | `results/predictive/predictive_comparison.{csv,pdf,png}` |
-| Algorithm 1 (middleware pipeline) | `src/dpdb/middleware.py` + `src/dpdb/budget.py` | source code |
-| Propositions 1–6 | `src/dpdb/model.py` | source + `tests/test_model.py` |
-| Aggregate report (all numbers) | `experiments/aggregate_all_results.py` | `results/REPORT.md` + `results/ALL_RESULTS.csv` |
-
----
-
-## Quick Start
-
-```powershell
-# 1. Install
-pip install -e ".[dev]"
-
-# 2. Generate data
-python3 scripts/load_data.py --sf 1.0
-python3 scripts/load_sf10.py            # optional, 75 sec, ~2.5 GB
-
-# 3. Verify the model self-check
-python3 -m dpdb.model
-
-# 4. Run experiments (each takes 1–10 minutes; safe to skip individual ones)
-python3 experiments/model_validation.py     --trials 30
-python3 experiments/extended_sweeps.py      --trials 30
-python3 experiments/sf10_validation.py      --trials 30
-python3 experiments/full_campaign.py        --trials 30 --k 100 --total-eps 100
-python3 experiments/leakage.py
-python3 experiments/workload_leakage.py     --shadow 30
-python3 experiments/temporal_validation.py  --trials 30
-python3 experiments/semantic_validation.py  --trials 30
-python3 experiments/predictive_comparison.py --trials 30
-
-# 5. Aggregate everything into one report
-python3 experiments/aggregate_all_results.py
-# → results/REPORT.md, results/ALL_RESULTS.csv (5613 rows)
-
-# 6. Interactive demo (for showing the system live)
-python3 scripts/presentation_demo.py
-
-# 7. Run unit tests
-python3 -m pytest tests/ -v
-# 101 passed
+```
+src/dpdb/        the middleware + the model        (model, predictive, budget, middleware, parser, …)
+experiments/     every figure/number has a script  (model_validation, redbench_validation, leakage, …)
+tests/           134 unit tests
+demo/            interactive web demo (Flask) + screenshots
+report/          the paper — report/course_paper.pdf  (+ .tex source)
+results/         generated figures & CSVs
 ```
 
 ---
 
-## Brief Compliance (Instructor's Revision Plan)
+## 📄 Paper
 
-Each item from the instructor's revision brief is addressed and traceable.
+The full write-up is **[`report/course_paper.pdf`](report/course_paper.pdf)** — *Forecasting Privacy-Budget Consumption in Repeated DP-SQL Workloads* (12 pp): the model and its five propositions, a 4,155-trial validation, the Redbench real-trace result, two leakage experiments, and honest limitations.
 
-| Item | Brief request | Where in code/paper |
-|------|---------------|---------------------|
-| R1 | Reframe contribution from mechanism to model | Abstract, §1, R2_model_sketch.md |
-| R2 | Statistical model of budget vs DP (load-bearing) | §4, src/dpdb/model.py, tests/test_model.py |
-| R3 | Couple budget with temporality | §5, src/dpdb/budget.py temporal hooks |
-| R4 | Leakage analysis with MIA + reconstruction | §7, experiments/leakage.py + workload_leakage.py |
-| R5 | Address inline comments (AVG, 1-1/k, Algorithm 1, RQ) | §3 (AVG paragraph), §4 (Limit A for 1-1/k), §6 (new Algorithm 1) |
-| R6 | Benchmark grid (W1–W4, SF=1/SF=10, ε sweep, 30 trials) | §6 + experiments/full_campaign.py (4155 core trials total) |
-| Deliverable 1 | Revised paper | report/final_report.tex |
-| Deliverable 2 | Reproducibility artifact + figure-to-script map | this README's table above |
-| Deliverable 3 | Response-to-reviewer | report/response_to_reviewer.md |
-| Bonus | Predictive allocator (Section 10) | src/dpdb/predictive.py + experiments/predictive_comparison.py |
-| Bonus | Eight items in Section 11 Future Work | report/final_report.tex §11 |
-
----
-
-## Paper Section Map
-
-The paper (`report/final_report.tex`) follows a clean 12-section narrative:
-
-```
-§1  Introduction              ─ why the milestone framing was thin, what the new contribution is
-§2  Background & Related     ─ DP foundations + private SQL systems + DP caching + tree kernels
-§3  Threat Model              ─ adversary, neighbouring DBs, supported SQL, sensitivities (AVG justified)
-§4  Analytical Model          ─ five propositions + limit verification (R2)
-§5  Temporal Extension        ─ Proposition 6, three regimes (R3)
-§6  System Implementation     ─ middleware architecture + new Algorithm 1 (R5)
-§7  Empirical Validation      ─ 4155-trial core campaign + cross-scale (R6)
-§8  Semantic Cache             ─ Tree Kernel + AST Embedding + honest negative
-§9  Privacy Leakage Analysis  ─ MIA + reconstruction + shadow-model MIA (R4)
-§10 Predictive Allocator      ─ model-driven adaptive ε mechanism (new contribution)
-§11 Future Work                ─ eight concrete next steps
-§12 Discussion & Conclusion    ─ where the model wins, where it loses
-```
-
----
-
-## Status
-
-- **101 unit tests passing**
-- **~8,000 experimental trials** across 13 scripts (4,155 in the core six-sweep §7 campaign, ~3,950 in the follow-up §8–§10 experiments). The aggregated long-form CSV at `results/ALL_RESULTS.csv` records 5,613 result rows.
-- **24 figures** generated and tracked in `results/`
-- **Paper** ready to compile on Overleaf (LaTeX source + embedded figure paths)
-- **GitHub:** [canoztas/cmp653-project](https://github.com/canoztas/cmp653-project) (private)
-
-For one-page Turkish summary, see [ProjeOzeti.md](ProjeOzeti.md).
-For demo commands during presentation, see [DEMO.md](DEMO.md).
+> **Scope, stated plainly.** The synthetic grid is a *self-consistency* check; the real external evidence is the Redbench prefix forecast. Savings genuinely vanish on workloads that never repeat — which the model predicts rather than hides.

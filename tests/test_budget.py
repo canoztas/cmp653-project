@@ -68,3 +68,41 @@ class TestWorkloadAwareBudget:
         assert summary["cache_hits"] == 1
         assert summary["total_queries"] == 2
         assert summary["consumed_epsilon"] == 1.0
+
+    def test_unique_templates_counts_exact_species(self):
+        # Three queries that share a structural template but differ in the WHERE
+        # literal are THREE distinct exact species, each charged epsilon. The
+        # summary must report 3, not 1 (structural-template under-count).
+        ledger = BudgetLedger(100.0, AllocationStrategy.WORKLOAD_AWARE)
+        for flag in ["R", "A", "N"]:
+            q = parse_query(f"SELECT COUNT(*) FROM lineitem WHERE l_returnflag = '{flag}'")
+            ledger.allocate(q, 1.0)
+            ledger.store_result(q, ["c"], [(1,)], 1.0)
+        assert ledger.summary()["unique_templates"] == 3
+        assert ledger.consumed_epsilon == 3.0
+
+
+class TestTemporalUpdateSeed:
+    """Regression: the update-invalidation RNG must be seeded per ledger so trials
+    are (a) reproducible for a fixed seed and (b) independent across seeds. A fixed
+    Random(42) made every trial share one update realization."""
+
+    def _evictions(self, seed: int) -> int:
+        ledger = BudgetLedger(
+            1e9, AllocationStrategy.WORKLOAD_AWARE,
+            staleness_tolerance=1e9,        # no age-based expiry; updates only
+            update_rate=0.5, update_invalidation_prob=0.5, update_seed=seed,
+        )
+        q = parse_query("SELECT COUNT(*) FROM lineitem WHERE l_returnflag = 'R'")
+        for _ in range(200):
+            if ledger.try_cache(q) is None:        # miss (or just-invalidated): re-noise
+                ledger.allocate(q, 1.0)
+                ledger.store_result(q, ["c"], [(1,)], 1.0)
+        return ledger.summary()["update_evictions"]
+
+    def test_same_seed_is_deterministic(self):
+        assert self._evictions(7) == self._evictions(7)
+
+    def test_independent_seeds_vary(self):
+        # independent update streams -> not all seeds collapse to one value
+        assert len({self._evictions(s) for s in range(6)}) > 1

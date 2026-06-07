@@ -42,19 +42,33 @@ def extract_template(parsed: ParsedQuery) -> str:
 
 
 def template_hash(template: str) -> str:
-    """Deterministic hash of a template string."""
-    return hashlib.sha256(template.encode()).hexdigest()[:16]
+    """Deterministic, collision-resistant hash of a template string (full SHA-256)."""
+    return hashlib.sha256(template.encode()).hexdigest()
 
 
 def param_hash(parsed: ParsedQuery) -> str:
-    """Hash of the literal values in WHERE (captures the specific parameters)."""
-    literals = []
+    """Collision-resistant hash of the WHERE literal values (type + value).
+
+    Each literal is serialized as ``<type>:<len>:<value>`` and the parts joined
+    with a control-character separator, so neither the string/number type nor a
+    value that happens to contain the separator can produce a colliding key for
+    the *serialization*. A naive ``"|".join(values)`` collides: ``education='a|b'
+    AND sex='c'`` and ``education='a' AND sex='b|c'`` both flatten to ``a|b|c``;
+    likewise ``age=1`` (number) and ``age='1'`` (string). The type tag and length
+    prefix make the encoding injective. We then take the full SHA-256 digest
+    (not a 64-bit truncation), so it is collision-*resistant* rather than truly
+    collision-free; callers that need an exact decision can compare the canonical
+    serialized keys directly.
+    """
+    parts = []
     where = parsed.ast.find(exp.Where)
     if where:
         for lit in where.find_all(exp.Literal):
-            literals.append(lit.this)
-    key = "|".join(str(l) for l in literals)
-    return hashlib.sha256(key.encode()).hexdigest()[:16]
+            val = str(lit.this)
+            typ = "s" if lit.is_string else "n"
+            parts.append(f"{typ}:{len(val)}:{val}")
+    key = "\x1f".join(parts)
+    return hashlib.sha256(key.encode()).hexdigest()
 
 
 def full_query_hash(parsed: ParsedQuery) -> str:
