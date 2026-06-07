@@ -68,6 +68,25 @@ Plus three honest experimental findings (the kind of negative results that make 
 
 ---
 
+## Baselines: what we beat, and what we do differently
+
+We are honest about both — on some axes we **beat** the baselines; on the core axis we do something **none of them does**.
+
+**What we beat.**
+- **Naive composition** (the standard per-query DP-SQL accounting): up to **100× less budget** on repetitive workloads (W1) — and, unlike naive, we *predict* the saving in closed form *before* running a query.
+- **A deployed DP engine — OpenDP SmartNoise-SQL** (`experiments/realsystem_baseline.py`): on 100 identical COUNT queries it spends the full **ε = 100.0** (it has no exact-repeat caching) where workload-aware accounting spends **1.0** — a **100× gap against a real library**, not an internal baseline. On genuinely all-distinct queries we honestly **tie** (no repetition to exploit). Both use basic composition here; SmartNoise's tighter Rényi accounting would lower *both* rates and composes with the caching.
+
+**What we do that the baselines don't.**
+- **Forecast budget consumption a-priori.** No prior DP-SQL system (PINQ, Chorus, PrivateSQL, APEx) predicts, in closed form and before execution, how much budget a *repeated* workload will spend. We do — `E[ε] = ε_q · E[u_k]` — and we validate it on **real production-derived traces** (Redbench, below).
+- **DP caches (Turbo, CacheDP)** save budget *reactively* and generalize across *overlapping* queries — where they **beat us, and we concede it**. But they emit no closed-form forecast of a workload's consumption. Our contribution is the **forecasting layer**, not the caching mechanism.
+- **Learned allocators (BGTplanner)** optimize from an observed-utility reward — exactly what DP hides at serve time; our forecast reads only *public* workload structure.
+
+**Real-workload validation (Redbench).** Beyond the synthetic Zipf sweep, we validate on **Redbench** (`experiments/redbench_validation.py`) — 30 analytical SQL workloads synthesized from Amazon Redshift's **Redset** production query traces. Findings: real workloads span **0–98% repetition**, are **heavy-tailed** (fitted Zipf α ∈ [0, 3], mean 0.84 — which *brackets* our synthetic sweep), the closed form **tracks the realized budget savings**, and a smoothed Good-Toulmin estimator **halves** the plug-in's prefix-forecast error. This closes the "synthetic-only" gap.
+
+> **Bottom line:** we don't claim to universally out-perform every system. We **beat** naive composition and a deployed engine on budget; we **tie** where there's no repetition; we **concede** the overlapping-query savings of DP caches; and we are the **only** one of these to *forecast* a repeated workload's budget from its structure, in closed form, before execution — validated on real traces.
+
+---
+
 ## Headline Numbers
 
 Full benchmark campaign: **4,155 core trials, ~150K queries, six experimental sweeps**.
@@ -132,6 +151,10 @@ experiments/
   temporal_validation.py     Tau-sweep + lambda-sweep, 30 trials
   semantic_validation.py     L1 vs L2 semantic cache (honest negative)
   predictive_comparison.py   Predictive vs fixed vs naive (new mechanism)
+  redbench_validation.py     Real-workload validation on Redbench production-derived traces
+  realsystem_baseline.py     Head-to-head vs OpenDP SmartNoise-SQL (deployed DP engine)
+  apriori_feasibility_case.py  A-priori (alpha,beta) feasibility verdict vs reactive baselines
+  unobservable_reward_case.py  Identifiability: why DP hides the reward a learned allocator needs
   aggregate_all_results.py   Combine all CSVs → results/REPORT.md
 
 report/
@@ -140,7 +163,7 @@ report/
   R2_model_sketch.md          Math derivation + limit checks for the model
   milestone_report.tex        Original milestone (kept for reference)
 
-tests/  (86 unit tests, all passing)
+tests/  (101 unit tests, all passing)
   test_parser.py    test_mechanisms.py  test_budget.py    test_template.py
   test_semantic.py  test_model.py       test_predictive.py
   test_predictors.py  test_allocation_policy.py
@@ -230,7 +253,7 @@ python3 scripts/presentation_demo.py
 
 # 7. Run unit tests
 python3 -m pytest tests/ -v
-# 86 passed
+# 101 passed
 ```
 
 ---
@@ -278,7 +301,7 @@ The paper (`report/final_report.tex`) follows a clean 12-section narrative:
 
 ## Status
 
-- **86 unit tests passing**
+- **101 unit tests passing**
 - **~8,000 experimental trials** across 13 scripts (4,155 in the core six-sweep §7 campaign, ~3,950 in the follow-up §8–§10 experiments). The aggregated long-form CSV at `results/ALL_RESULTS.csv` records 5,613 result rows.
 - **24 figures** generated and tracked in `results/`
 - **Paper** ready to compile on Overleaf (LaTeX source + embedded figure paths)

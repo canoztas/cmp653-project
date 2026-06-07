@@ -144,20 +144,22 @@ WORKLOAD_FAMILIES = {
 
 
 def _drilldown(k: int, seed: int) -> tuple[list[str], list[int]]:
-    """Drill-down workload: each query strictly narrower than the previous.
+    """Drill-down workload: each query strictly narrower than the previous, with no
+    exact repeats by design (every query is a distinct SQL string).
 
-    Models the differencing-attack pattern; no exact repeats by design.
+    Models the differencing-attack / progressive-narrowing access pattern.
     """
-    rng = np.random.default_rng(seed)
     queries = []
     indices = []
     for i in range(k):
-        # Each drill-down has a unique combination of WHERE clauses
-        age_low = 20 + (i % 7) * 10
         flag = ["R", "A", "N"][i % 3]
-        q = f"SELECT SUM(l_extendedprice) FROM lineitem WHERE l_returnflag = '{flag}'"
+        # A strictly increasing quantity threshold makes every query narrower than the
+        # last AND a distinct SQL string (the earlier version left the threshold unused,
+        # collapsing the workload to 3 distinct queries).
+        q = (f"SELECT SUM(l_extendedprice) FROM lineitem "
+             f"WHERE l_returnflag = '{flag}' AND l_quantity >= {i + 1}")
         queries.append(q)
-        indices.append(i)  # every query has its own "template" index for drill-down
+        indices.append(i)  # every query is its own distinct template
     return queries, indices
 
 

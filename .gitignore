@@ -53,3 +53,10 @@ results/predictive/*
 results/predictors/*
 !results/predictors/predictor_comparison.csv
 !results/predictors/allocation_policy_comparison.csv
+
+# Scratch: heavy/regenerable artifacts (dev-only; keep the scripts/results, drop node_modules + logs)
+_scratch/node_modules/
+_scratch/nm_bak/
+_scratch/snenv/
+_scratch/*.log
+_scratch/*.csv

@@ -32,7 +32,7 @@ import numpy as np
 from dpdb.model import expected_unique_queries
 from dpdb.parser import ParsedQuery
 from dpdb.predictors import predict_smoothed_gt
-from dpdb.template import extract_template, template_hash
+from dpdb.template import full_query_hash
 
 
 @dataclass
@@ -121,7 +121,10 @@ class PredictiveAllocator:
         that an offline planner would pick if u_k were known.
         """
         self.queries_seen += 1
-        t_hash = template_hash(extract_template(parsed))
+        # Species = the EXACT cache identity (template + WHERE literals), matching the
+        # cache key in budget.py (full_query_hash). Counting structural templates alone
+        # would under-count cache misses for parametric workloads and over-size eps_q.
+        t_hash = full_query_hash(parsed)
         self.template_hashes.append(t_hash)
         self.unique_templates.add(t_hash)
 

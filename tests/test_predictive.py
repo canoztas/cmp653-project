@@ -57,7 +57,9 @@ class TestPredictiveAllocator:
             alloc.note_release(_q(flag), eps)
         s = alloc.summary()
         assert s["total_queries"] == 5
-        assert s["unique_templates"] == 1  # all same template, different params
+        # Species = exact query (template + WHERE literals), matching the cache key.
+        # R/A/N are 3 distinct exact queries; the two extra R's are exact repeats.
+        assert s["unique_templates"] == 3
         assert s["consumed_epsilon"] > 0
         assert s["remaining_budget"] < 10.0
 

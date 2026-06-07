@@ -201,13 +201,15 @@ class TemporalRegime:
 
 
 def expected_renoising_count(regime: TemporalRegime) -> float:
-    """Expected number of re-noisings per cached entry over horizon T.
+    """Expected number of noising events per cached entry over horizon T (>= 1).
 
-    Combines:
-      - Forced refresh from staleness tolerance: ceil(T / tau)
+    Each entry is released (noised) at least once; staleness and updates force
+    additional re-noisings:
+      - Staleness-forced releases over the horizon: ceil(T / tau), floored at 1 so
+        the static regime (tau -> infinity) reduces to a single release, NOT zero.
       - Updates that invalidate the entry: T * lambda * invalidation_prob
     """
-    forced = math.ceil(regime.horizon_T / max(regime.staleness_tolerance, 1e-9))
+    forced = max(1, math.ceil(regime.horizon_T / max(regime.staleness_tolerance, 1e-9)))
     update_driven = regime.horizon_T * regime.update_rate * regime.update_invalidation_prob
     return forced + update_driven
 
