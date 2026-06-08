@@ -51,7 +51,7 @@ We're careful to claim only what we can show:
 
 | | |
 |---|---|
-| ✅ **New capability** | A **before-execution** forecast of a repeated workload's budget — to our knowledge the first for DP-SQL. From public structure alone (no query run), it reports the **expected spend**, a **hard completion guarantee** (the safe `ε_q = B/m` sizing never overruns), and a **per-release accuracy** verdict. |
+| ✅ **New capability** | A **before-execution** forecast of a repeated workload's budget — to our knowledge the first to do this **in closed form from public structure alone** (`{p_i}`, `k`, `B`), with no query run and the data never touched. It reports the **expected spend**, a **hard completion guarantee** (the safe `ε_q = B/m` sizing never overruns), and a **per-release accuracy** verdict. *(The closest proactive work, LAPRAS, instead precomputes on a predicted query set and touches the data.)* |
 | ✅ **Measured improvement** | On **30 real-trace workloads** (Redbench, from Amazon Redshift logs), forecasting the full workload from only its **first half** cuts the prediction error by **45%** (0.22 → 0.12) over the naïve plug-in. |
 | 🤝 **On par, not ahead** | DP caches (Turbo, CacheDP) reach the same savings *reactively*; on the raw number we're **level, not better**. Our edge is the forecast they don't expose, not a bigger multiplier. |
 | ❌ **We do _not_ claim** | to beat deployed DP caches, or that exact-repeat caching is novel. |
