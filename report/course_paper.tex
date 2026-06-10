@@ -97,7 +97,7 @@ Predicting the number of distinct query species in a length-$k$ workload is the 
 
 \begin{table}[t]
 \footnotesize\centering
-\caption{Positioning. No prior system predicts a repeated workload's budget from its structure, before execution.}
+\caption{Positioning. To our knowledge, no prior system natively exposes a closed-form, before-execution budget forecast from public workload structure alone.}
 \label{tab:related}
 \setlength{\tabcolsep}{4pt}
 \resizebox{\columnwidth}{!}{%
@@ -108,6 +108,7 @@ System & workload model & predict budget & exact-repeat free \\
 PINQ / Chorus / DOP-SQL & --- & no & no \\
 PrivateSQL             & repr.\ batch & no & synopsis \\
 Turbo / CacheDP        & --- & no & yes (reactive) \\
+Pioneer / LAPRAS       & predicted set & no (precompute, on data) & partial \\
 APEx                   & --- & no (per-query) & no \\
 BGTplanner             & learned GP & no & no \\
 \textbf{Ours}          & \textbf{closed-form} & \textbf{yes (a-priori)} & \textbf{yes} \\
@@ -209,7 +210,7 @@ With a fixed total $\eps_{\mathrm{tot}}$, naive affords $\eps_q^{\mathrm{naive}}
 \subsection{System and temporal extension}
 \label{sec:system}
 
-The middleware is a thin proxy between the analyst and a backend database (Figure~\ref{fig:arch}). Each query is parsed and validated, hashed to a (template, parameter) key, and checked against a two-level cache; a hit is returned for free (post-processing), a miss is charged $\eps_q$, noised, and cached. Four execution modes (exact, naive-DP, workload-aware-DP, temporal-DP) share the pipeline of Algorithm~\ref{alg:full}, which couples cache validity to a temporal regime: it advances a logical clock, simulates per-step Bernoulli invalidations (each entry invalidated independently w.p.\ $\lambda q_{\mathrm{inv}}$, a discrete approximation of a Poisson process), ages each entry against the staleness tolerance $\tau$, and only then returns the cached release or charges the ledger.
+The middleware is a thin proxy between the analyst and a backend database (Figure~\ref{fig:arch}). Each query is parsed and validated, hashed to a (template, parameter) key, and checked against a two-level cache; a hit is returned for free (post-processing), a miss is charged $\eps_q$, noised, and cached. Four core execution modes (exact, naive-DP, workload-aware-DP, temporal-DP) share the pipeline of Algorithm~\ref{alg:full}---two further modes extend it (predictive allocation, Appendix~\ref{app:allocator}; semantic caching, Appendix~\ref{app:semantic})---which couples cache validity to a temporal regime: it advances a logical clock, simulates per-step Bernoulli invalidations (each entry invalidated independently w.p.\ $\lambda q_{\mathrm{inv}}$, a discrete approximation of a Poisson process), ages each entry against the staleness tolerance $\tau$, and only then returns the cached release or charges the ledger.
 
 \begin{figure}[t]
 \centering
@@ -531,18 +532,18 @@ The artifact includes an interactive web demo (Flask) that runs each query throu
 \bibitem{dinur2003revealing} I.\ Dinur, K.\ Nissim. Revealing Information While Preserving Privacy. \emph{PODS}, 2003.
 \bibitem{mcsherry2009privacy} F.\ McSherry. Privacy Integrated Queries (PINQ). \emph{SIGMOD}, 2009.
 \bibitem{kotsogiannis2019privatesql} I.\ Kotsogiannis et al. PrivateSQL: A Differentially Private SQL Query Engine. \emph{PVLDB} 12(11), 2019.
-\bibitem{johnson2020chorus} N.\ Johnson, J.\ P.\ Near, D.\ Song. Towards Practical Differential Privacy for SQL Queries (Chorus). \emph{PVLDB} 11(5), 2018.
+\bibitem{johnson2020chorus} N.\ Johnson, J.\ P.\ Near, J.\ M.\ Hellerstein, D.\ Song. Chorus: a Programming Framework for Building Scalable Differential Privacy Mechanisms. \emph{IEEE EuroS\&P}, 2020.
 \bibitem{yu2024dopsql} Y.\ Yu et al. DOP-SQL: Differentially Private Optimization for SQL. 2024.
 \bibitem{ge2019apex} C.\ Ge, X.\ He, I.\ F.\ Ilyas, A.\ Machanavajjhala. APEx: Accuracy-Aware Differentially Private Data Exploration. \emph{SIGMOD}, 2019.
 \bibitem{zhang2024bgtplanner} X.\ Zhang et al. BGTplanner: Maximizing Training Accuracy for Differentially Private Federated Recommenders via Strategic Privacy Budget Allocation. \emph{IEEE Trans.\ Services Computing} 18(6), 2025, 3523--3531.
 \bibitem{li2015matrix} C.\ Li, G.\ Miklau, M.\ Hay, A.\ McGregor, V.\ Rastogi. The Matrix Mechanism: Optimizing Linear Counting Queries under Differential Privacy. \emph{VLDB Journal} 24(6), 2015.
 \bibitem{dong2023better} W.\ Dong, J.\ Sun, K.\ Yi. Better than Composition: How to Answer Multiple Relational Queries under Differential Privacy. \emph{SIGMOD}, 2023.
-\bibitem{pujol2023multianalyst} D.\ Pujol, A.\ Sun, B.\ Fain, A.\ Machanavajjhala. Multi-Analyst Differential Privacy for Online Query Answering. \emph{PVLDB} 16(4), 2023.
+\bibitem{pujol2023multianalyst} D.\ Pujol, A.\ Sun, B.\ Fain, A.\ Machanavajjhala. Multi-Analyst Differential Privacy for Online Query Answering. \emph{PVLDB} 16(4), 2022.
 \bibitem{kostopoulou2023turbo} K.\ Kostopoulou, P.\ Tholoniat, A.\ Cidon, R.\ Geambasu, M.\ L\'ecuyer. Turbo: Effective Caching in Differentially-Private Databases. \emph{SOSP}, 2023.
-\bibitem{mazmudar2023cachedp} M.\ Mazmudar, T.\ Humphries, et al. Cache Me If You Can: Accuracy-Aware Inference Engine for Differentially Private Data Exploration. \emph{PVLDB} 16(4), 2023.
+\bibitem{mazmudar2023cachedp} M.\ Mazmudar, T.\ Humphries, et al. Cache Me If You Can: Accuracy-Aware Inference Engine for Differentially Private Data Exploration. \emph{PVLDB} 16(4), 2022.
 \bibitem{abadi2016deep} M.\ Abadi et al. Deep Learning with Differential Privacy. \emph{CCS}, 2016.
 \bibitem{mironov2017renyi} I.\ Mironov. R\'enyi Differential Privacy. \emph{CSF}, 2017.
-\bibitem{bun2016concentrated} M.\ Bun, T.\ Steinke. Concentrated Differential Privacy. \emph{TCC}, 2016.
+\bibitem{bun2016concentrated} M.\ Bun, T.\ Steinke. Concentrated Differential Privacy: Simplifications, Extensions, and Lower Bounds. \emph{TCC}, 2016.
 \bibitem{flajolet1992} P.\ Flajolet, D.\ Gardy, L.\ Thimonier. Birthday Paradox, Coupon Collectors, Caching Algorithms and Self-Organizing Search. \emph{Discrete Applied Math.} 39(3), 1992.
 \bibitem{goodtoulmin1956} I.\ J.\ Good, G.\ H.\ Toulmin. The Number of New Species, and the Increase in Population Coverage, when a Sample is Increased. \emph{Biometrika} 43, 1956.
 \bibitem{orlitsky2016unseen} A.\ Orlitsky, A.\ T.\ Suresh, Y.\ Wu. Optimal Prediction of the Number of Unseen Species. \emph{PNAS} 113(47), 2016.
@@ -552,9 +553,9 @@ The artifact includes an interactive web demo (Flask) that runs each query throu
 \bibitem{collins2001convolution} M.\ Collins, N.\ Duffy. Convolution Kernels for Natural Language. \emph{NeurIPS}, 2001.
 \bibitem{dong2021residual} W.\ Dong, K.\ Yi. Residual Sensitivity for Differentially Private Multi-Way Joins. \emph{SIGMOD}, 2021.
 \bibitem{dong2022r2t} W.\ Dong, J.\ Fang, K.\ Yi, et al. R2T: Instance-optimal Truncation for Differentially Private Query Evaluation with Foreign Keys. \emph{SIGMOD}, 2022.
-\bibitem{mundra2026lapras} P.\ Mundra, A.\ Sealfon, Z.\ Sun. LAPRAS: Learning-Augmented Private Answering for Linear Query Streams. arXiv:2605.01960, 2026.
+\bibitem{mundra2026lapras} P.\ Mundra, A.\ Sealfon, Z.\ Sun, Q.\ C.\ Liu. LAPRAS: Learning-Augmented Private Answering for Linear Query Streams. arXiv:2605.01960, 2026.
 \bibitem{peng2013pioneer} S.\ Peng, Y.\ Yang, Z.\ Zhang, M.\ Winslett, Y.\ Yu. Query Optimization for Differentially Private Data Management Systems (Pioneer). \emph{ICDE}, 2013.
-\bibitem{acharya2018inspectre} J.\ Acharya, Z.\ Sun, H.\ Zhang, G.\ Kamath. INSPECTRE: Privately Estimating the Unseen. \emph{ICML}, 2018.
+\bibitem{acharya2018inspectre} J.\ Acharya, G.\ Kamath, Z.\ Sun, H.\ Zhang. INSPECTRE: Privately Estimating the Unseen. \emph{ICML}, 2018.
 
 \end{thebibliography}
 
