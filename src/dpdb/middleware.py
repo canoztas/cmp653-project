@@ -283,10 +283,11 @@ class DPMiddleware:
     ) -> list[tuple]:
         """Add calibrated Laplace noise to aggregate columns in each row.
 
-        For queries with GROUP BY, each group's aggregates get independent noise.
-        Budget epsilon is split equally among aggregates in a single query
-        (parallel composition when aggregates are over different columns,
-         sequential composition as a conservative default).
+        For queries with GROUP BY, each group's aggregates get independent noise;
+        a tuple affects one group, so groups compose in PARALLEL (cost eps_q, not
+        g*eps_q). Multiple aggregates in one SELECT, however, read the same rows,
+        so eps_q is split equally and summed across them -- SEQUENTIAL composition
+        (the conservative path), not parallel.
         """
         n_aggs = len(sensitivities)
         if n_aggs == 0:

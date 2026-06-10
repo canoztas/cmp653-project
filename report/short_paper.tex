@@ -26,7 +26,7 @@
 \maketitle
 
 \begin{abstract}
-Differentially private (DP) SQL systems add calibrated noise to each aggregate query and charge it a slice of a fixed privacy budget; once it is spent, no further query can be answered. They account for queries in isolation, yet real analytical workloads \emph{repeat}---dashboards refresh the same tiles, drill-downs sweep the same shapes---and an exact repeat can reuse an already-noised answer for free (DP \emph{post-processing}). We give a closed-form model that predicts, from a workload's repetition structure alone and \emph{before any query runs}, how much budget it will spend. The key quantity is the expected number of \emph{distinct} queries, $\E[u_k]=\sum_i[1-(1-p_i)^k]$; from it we obtain the expected spend, a savings ratio, and limit, monotonicity, concentration, and utility consequences. To our knowledge this is the first such forecast computed in \emph{closed form from public structure alone}---$\{p_i\}$, length $k$, budget $B$---with no query executed and the sensitive data never touched. We instantiate the model in a unit-tested middleware (COUNT/SUM/AVG, GROUP BY, top-$k$) and validate on a $4{,}155$-trial campaign (within $3\%$ in $21/24$ cells) and on \emph{Redbench}, $30$ Amazon Redshift--derived traces, where forecasting from only the first half of each workload cuts the prediction error by $45\%$ over a plug-in estimate.
+Differentially private (DP) SQL systems add calibrated noise to each aggregate query and charge it a slice of a fixed privacy budget; once it is spent, no further query can be answered. They account for queries in isolation, yet real analytical workloads \emph{repeat}---dashboards refresh the same tiles, drill-downs sweep the same shapes---and an exact repeat can reuse an already-noised answer for free (DP \emph{post-processing}). We give a closed-form model that predicts, from a workload's repetition structure alone and \emph{before any query runs}, how much budget it will spend. The key quantity is the expected number of \emph{distinct} queries, $\E[u_k]=\sum_i[1-(1-p_i)^k]$; from it we obtain the expected spend, a savings ratio, and limit, monotonicity, concentration, and utility consequences. To our knowledge this is the first such forecast computed in \emph{closed form from public structure alone}---$\{p_i\}$, length $k$, budget $B$---with no query executed and the sensitive data never touched. We instantiate the model in a unit-tested middleware (COUNT/SUM/AVG, GROUP BY, top-$k$); a $4{,}155$-trial \emph{self-consistency} campaign matches the formula within $3\%$ in $21/24$ cells, and---as external evidence---on \emph{Redbench}, $30$ Amazon Redshift--derived traces, forecasting from only the first half of each workload cuts the prediction error by $45\%$ over a plug-in estimate.
 \keywords{Differential privacy \and Privacy budget \and SQL workloads \and Unseen-species estimation \and Caching.}
 \end{abstract}
 
@@ -57,7 +57,7 @@ We do \emph{not} claim to outperform deployed DP caches: against them we are \em
 
 \paragraph{DP-SQL systems.} PINQ~\cite{mcsherry2009privacy} and Chorus~\cite{johnson2020chorus} expose a fixed per-query $\eps_q$ and account in isolation. PrivateSQL~\cite{kotsogiannis2019privatesql} spends a one-time budget building DP synopses over a representative workload; it fixes that budget up front but emits no closed-form, before-execution prediction for an arbitrary repeated stream.
 
-\paragraph{DP caching and proactive answering.} DP caches make repeated work cheaper at runtime: Turbo~\cite{kostopoulou2023turbo} conserves $1.7$--$15.9\times$ budget by generalizing across overlapping linear queries, and CacheDP~\cite{mazmudar2023cachedp} answers a workload at lower budget under an accuracy contract. Pioneer~\cite{peng2013pioneer} reused past noisy results but, by its authors' statement, optimizes only the \emph{current} query and leaves future-workload effects to future work. Closest to us, LAPRAS~\cite{mundra2026lapras} is also \emph{proactive}: it precomputes an offline batch mechanism on a \emph{predicted} query set before the stream and serves it for free---but it needs a concrete predicted set and \emph{touches the sensitive data} ahead of time, whereas we forecast in closed form from \emph{public} structure $(\{p_i\},k,B)$ alone, the data never touched. These deliver the \emph{savings} our model prices, but reactively or by precomputing on data, and without a structural forecast; our exact-repeat caching is a special case for which we claim no novelty.
+\paragraph{DP caching and proactive answering.} DP caches make repeated work cheaper at runtime: Turbo~\cite{kostopoulou2023turbo} conserves $1.7$--$15.9\times$ budget by generalizing across overlapping linear queries, and CacheDP~\cite{mazmudar2023cachedp} answers a workload at lower budget under an accuracy contract. Pioneer~\cite{peng2013pioneer} reused past noisy results but, by its authors' statement, optimizes only the \emph{current} query and leaves future-workload effects to future work. Closest to us is the concurrent, unrefereed LAPRAS~\cite{mundra2026lapras}, also \emph{proactive}: it precomputes an offline batch mechanism on a \emph{predicted} query set before the stream and serves it for free---but it needs a concrete predicted set and \emph{touches the sensitive data} ahead of time, whereas we forecast in closed form from \emph{public} structure $(\{p_i\},k,B)$ alone, the data never touched. These deliver the \emph{savings} our model prices, but reactively or by precomputing on data, and without a structural forecast; our exact-repeat caching is a special case for which we claim no novelty.
 
 \paragraph{Accounting, allocation, unseen species.} Tight composition (RDP~\cite{mironov2017renyi}, zCDP~\cite{bun2016concentrated}) reduces the \emph{rate} of spend, orthogonal to our \emph{count} of releases. APEx~\cite{ge2019apex} maps a per-query accuracy target to the minimum $\eps$ at runtime; multi-analyst budget sharing~\cite{pujol2023multianalyst} invokes the coupon-collector problem to bound queries-per-\emph{analyst}, a throughput limit, not a distinct-query forecast. The distinct-count side is the classical unseen-species problem~\cite{flajolet1992}: Good--Toulmin~\cite{goodtoulmin1956} and its smoothed variant~\cite{orlitsky2016unseen} predict new species from a prefix; this has even been brought under DP for \emph{estimation} (INSPECTRE~\cite{acharya2018inspectre}), but for support coverage, not budget. We connect these tools to DP-\emph{budget} forecasting.
 
@@ -81,17 +81,17 @@ Naive composition spends $k\eps_q$. Workload-aware accounting spends $\E[\eps_{\
 \begin{proposition}[Skew monotonicity]\label{prop:zipf}
 For $p_i\propto i^{-\alpha}$, $S(k)$ is non-decreasing in $\alpha$ for fixed $(k,m)$.
 \end{proposition}
-\noindent\emph{Sketch.} $\E[u_k]=\sum_i\phi(p_i)$ with $\phi(x)=1-(1-x)^k$ concave, hence Schur-concave; larger $\alpha$ majorizes the weight vector, lowering $\E[u_k]$ and raising $S$. So the more a workload concentrates on a few popular queries, the more it saves.
+\noindent\emph{Sketch.} $\E[u_k]=\sum_i\phi(p_i)$ with $\phi(x)=1-(1-x)^k$ concave, hence $\E[u_k]$ is Schur-concave; larger $\alpha$ majorizes the (truncated Zipf) weight vector---a numerical scan over $m\le100$, $k\le200$ found no violation---lowering $\E[u_k]$ and raising $S$. So the more a workload concentrates on a few popular queries, the more it saves.
 
 \begin{proposition}[Concentration]\label{prop:conc}
-With $q_i=1-(1-p_i)^k$, the occupancy indicators are negatively associated, so $\Var[u_k]\le\sum_i q_i(1-q_i)\le m/4=:V$ and $\Prob[|u_k-\E[u_k]|\ge t]\le V/t^2$.
+With $q_i=1-(1-p_i)^k$, the occupancy indicators are negatively associated~\cite{joagdev1983} (so their covariances are $\le0$), giving $\Var[u_k]\le\sum_i q_i(1-q_i)\le m/4=:V$ and $\Prob[|u_k-\E[u_k]|\ge t]\le V/t^2$.
 \end{proposition}
 \noindent Because $V=O(m)$ not $O(k)$, the realized spend on a \emph{single} run stays close to the forecast (a variance/Chebyshev-scale statement, not a high-probability envelope): a custodian can trust the single number.
 
 \begin{proposition}[Utility at fixed budget]\label{prop:util}
 At a fixed total $\eps_{\mathrm{tot}}$, naive affords $\eps_{\mathrm{tot}}/k$ per query and workload-aware $\eps_{\mathrm{tot}}/\E[u_k]$ per distinct release; since $\E[|\eta|]=\Delta f/\eps_q$, the per-query error ratio is $k/\E[u_k]$.
 \end{proposition}
-\noindent So spreading the budget over the $\E[u_k]$ distinct queries (not all $k$) buys proportionally lower error---in the example, $\approx33\times$ at equal privacy (in expectation; a hard cap is needed when realized $u_k$ exceeds $\E[u_k]$, which is why the static-regime safe sizing is $\eps_q=B/m$).
+\noindent So spreading the budget over the $\E[u_k]$ distinct queries (not all $k$) buys proportionally lower error---in the example, $\approx33\times$ at equal privacy (in expectation; a hard cap is needed when realized $u_k$ exceeds $\E[u_k]$, which is why the static-regime safe sizing is $\eps_q=B/m$). Beyond the mean, the per-release accuracy has a closed tail: for $\eta\sim\Lap(\Delta f/\eps_q)$, $\Prob[|\eta|>\alpha]=e^{-\alpha\eps_q/\Delta f}$, so each release meets $|\text{error}|\le\alpha$ with probability $\ge1-\beta$ iff $\alpha\ge(\Delta f/\eps_q)\ln(1/\beta)$. Under $\eps_q{=}B/m$ the planner emits this \emph{per-release} $(\alpha,\beta)$ verdict at $t{=}0$, before any query runs---reported per release, not as a joint guarantee.
 
 \section{System}
 \label{sec:system}
@@ -113,24 +113,24 @@ The model is also prescriptive: a \emph{predictive allocator} estimates $\hat U=
 
 \begin{table}[t]
 \centering
-\caption{Budget saved vs.\ naive composition ($k{=}100$, total $\eps{=}100$, $30$ trials). The model predicts each $\E[u_k]$ in closed form, before execution.}
+\caption{Budget saved vs.\ naive composition ($k{=}100$, total $\eps{=}100$, $30$ trials). The rows vary the distinct-query \emph{pool size} $m$; by $k{=}100$ the distinct count $u_k$ saturates near $m$, which the model predicts in closed form. (At fixed $m$, higher skew lowers $u_k$ further; Prop.~\ref{prop:zipf}.)}
 \label{tab:sav}
 \begin{tabular}{lccc}
 \toprule
 Workload & naive $\eps$ & workload-aware $\eps$ & saved \\
 \midrule
-Repetitive (1 query)        & 100 & 1.0  & $100\times$ \\
-TPC-H Zipf $\alpha{=}0.5$    & 100 & 3.0  & $33\times$ \\
-TPC-H Zipf $\alpha{=}1.0$    & 100 & 5.0  & $20\times$ \\
-Uniform pool ($m{=}7$)      & 100 & 7.0  & $14.3\times$ \\
-Drill-down (all unique)     & 100 & 100  & $1\times$ (no win) \\
+Repetitive (1 query)            & 100 & 1.0  & $100\times$ \\
+TPC-H returnflag ($m{=}3$)      & 100 & 3.0  & $33\times$ \\
+TPC-H priority ($m{=}5$)        & 100 & 5.0  & $20\times$ \\
+Uniform / Zipf pool ($m{=}7$)   & 100 & 7.0  & $14.3\times$ \\
+Drill-down (all unique)         & 100 & 100  & $1\times$ (no win) \\
 \bottomrule
 \end{tabular}
 \end{table}
 
 \paragraph{Real traces (headline).} On Redbench~\cite{redbench2025}---$30$ workloads synthesized from Amazon Redshift's Redset production traces---the exact-query repetition rate \emph{is} our $S(k)$. Realized $S(k)$ spans $0$--$98\%$ (mean $53\%$) with fitted Zipf $\alpha\in[0,3]$ (mean $0.84$), bracketing our synthetic sweep. Forecasting the full distinct-query count from only the \emph{first half} of each timeline, a smoothed Good--Toulmin estimator cuts the plug-in's error by $45\%$ ($0.22\!\to\!0.12$ in $u_k/k$). This---not the in-sample fit---is the genuine before-execution forecast, confirmed on production-derived data. Redbench is \emph{not} a DP benchmark; we use only its repetition structure to externally validate the occupancy forecast.
 
-\paragraph{Calibration and allocation.} Two attacks confirm the per-release noise is correctly calibrated: a single-query membership-inference AUC tracks $e^\eps/(1+e^\eps)$ within $1\%$, and a differencing reconstruction error scales as $1.5/\eps$. For allocation, the safe $\eps_q{=}B/m$ sizing answers $100\%$ of queries at fresh-release MAE $2.0$ versus a tuned $\eps$-greedy bandit's $3.8$---it \emph{reaches} the bandit's best operating point at zero exploration cost. Against reactive caches we cite their own figures (Turbo $1.7$--$15.9\times$; ours $14$--$33\times$): the same order of magnitude, so we claim \emph{parity}, not superiority.
+\paragraph{Calibration and allocation.} Two attacks confirm the per-release noise is correctly calibrated: a single-query membership-inference AUC stays at or below the $e^\eps/(1+e^\eps)$ optimal-\emph{accuracy} reference (within $1\%$ for $\eps\le1$), and a differencing reconstruction error scales as $1.5/\eps$. For allocation, the safe $\eps_q{=}B/m$ sizing answers $100\%$ of queries at fresh-release MAE $2.0$ versus a tuned $\eps$-greedy bandit's $3.8$---it \emph{reaches} the bandit's best operating point at zero exploration cost. Against reactive caches we cite their own figures (Turbo $1.7$--$15.9\times$; ours $14$--$33\times$): the same order of magnitude---though the metrics differ (Turbo \emph{generalizes across overlapping} queries, we reuse only \emph{exact} repeats), so this is a ballpark placement, not a controlled comparison, and we claim \emph{parity}, not superiority.
 
 \section{Conclusion}
 \label{sec:concl}
@@ -152,6 +152,7 @@ A closed-form model parameterized by $(\{p_i\},k)$ predicts realized DP-budget c
 \bibitem{mironov2017renyi} I.\ Mironov. R\'enyi Differential Privacy. CSF, 2017.
 \bibitem{bun2016concentrated} M.\ Bun, T.\ Steinke. Concentrated Differential Privacy. TCC, 2016.
 \bibitem{flajolet1992} P.\ Flajolet, D.\ Gardy, L.\ Thimonier. Birthday Paradox, Coupon Collectors, Caching Algorithms and Self-Organizing Search. Discrete Applied Math 39(3), 1992.
+\bibitem{joagdev1983} K.\ Joag-Dev, F.\ Proschan. Negative Association of Random Variables, with Applications. \emph{Ann.\ Statist.} 11(1), 1983.
 \bibitem{goodtoulmin1956} I.\,J.\ Good, G.\,H.\ Toulmin. The Number of New Species\ldots\ Biometrika 43, 1956.
 \bibitem{orlitsky2016unseen} A.\ Orlitsky, A.\,T.\ Suresh, Y.\ Wu. Optimal Prediction of the Number of Unseen Species. PNAS 113(47), 2016.
 \bibitem{acharya2018inspectre} J.\ Acharya, Z.\ Sun, H.\ Zhang, G.\ Kamath. INSPECTRE: Privately Estimating the Unseen. ICML, 2018.
