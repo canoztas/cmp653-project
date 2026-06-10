@@ -96,7 +96,7 @@ Plain-language explanations sit under every step (EN/TR toggle), with a searchab
 - **Scale-invariant** (6M vs 60M rows agree within 0.034) and **budget-invariant** — so you can plan capacity before deploying.
 - **Headline (real traces):** prefix forecast cuts error **45%** (0.22 → 0.12) on Redbench.
 
-**Allocation** — the safe `ε_q = B/m` allocator answers **100%** of queries at MAE **2.0** vs an ε-greedy bandit's **3.8** (the bandit pays an *exploration tax* to reach the point we compute in closed form).
+**Allocation** — the safe `ε_q = B/m` allocator answers **100%** of queries at MAE **2.0** vs an ε-greedy bandit's **3.6** (the bandit pays an *exploration tax* to reach the point we compute in closed form).
 
 > Full campaign: **~8,000 trials across 13 scripts**; every number has a script that reproduces it.
 

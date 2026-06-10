@@ -144,6 +144,15 @@ def main(redbench=DEFAULT_REDBENCH):
     print("  budget savings; forecasting from a prefix is harder (unseen templates), where")
     print("  the smoothed Good-Toulmin estimator is the right tool (the estimator analysis).")
 
+    # Persist the per-workload table so the paper's numbers have a committed artifact.
+    out = Path(__file__).parent.parent / "results" / "redbench"
+    out.mkdir(parents=True, exist_ok=True)
+    with open(out / "redbench_validation.csv", "w", newline="") as f:
+        w = csv.DictWriter(f, fieldnames=list(rows[0].keys()))
+        w.writeheader()
+        w.writerows(rows)
+    print(f"\n  Wrote {out / 'redbench_validation.csv'} ({len(rows)} workloads).")
+
 
 if __name__ == "__main__":
     main(sys.argv[1] if len(sys.argv) > 1 else DEFAULT_REDBENCH)

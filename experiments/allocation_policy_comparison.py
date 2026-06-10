@@ -22,7 +22,7 @@ denominator from the only observable signals (granted eps, rejections). Policies
 
 Verified finding (adversarial multi-agent check, high confidence): at m=20,
 k=100, B=10 the safe closed form answers 100% at fresh MAE ~2.0 vs the bandit's
-~3.8 at the same 100% rate (~1.9x, ~18x SEM). This is an EXPLORATION-tax win, not
+~3.6 at the same 100% rate (~1.8x; committed CSV mae_miss 3.58). This is an EXPLORATION-tax win, not
 a noise-scale one: a bandit constrained to 100% answered only ties B/m. Crossing
 BELOW B/m safely requires forecasting u_k (oracle ~1.6) -- which a model-free
 bandit cannot do. Holds for m <= k/4; reverses for m > k/4 (bandit grid then has
