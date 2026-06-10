@@ -68,7 +68,7 @@ Workload, m template'li bir dagilim {p_i}'den i.i.d. cekiliyor. 5 proposition tu
 | Extended α (10'a kadar) | 240 | Tum hucreler <2% |
 | Epsilon sweep | 480 | Model ε-bagimsiz dogrulandi |
 | Large k (500'e kadar) | 75 | m=7'de saturate |
-| SF=1 vs SF=10 (60M satir) | 480 | Dataset-bagimsiz, 0.03 unit fark |
+| SF=1 vs SF=10 (60M satir) | 480 | Dataset-bagimsiz, 0.034 unit fark |
 | Full benchmark (6 workload × 4 ε × 3 mod) | 2160 | W1 100x, W4 1x (model dogru) |
 
 ---
@@ -105,7 +105,7 @@ Brief'in onerdigi "yeni mechanism" — modelin pratik kullanimi:
 
 **u_k tahmin metotlari:** Allocator'in kalbi Û tahmini. Mevcut plug-in gorulmeyeni sayamadigindan az tahmin ediyor (*unseen-species* problemi). Good-Toulmin / Smoothed-GT eklendi: makul warmup'ta (t≤2) tahmin hatasini **yariya** indiriyor.
 
-**Tahsis politikasi deneyi (BGTplanner-tarzi ogrenen bandit'e karsi; BGTplanner en yakin akrabamiz):** BGTplanner butceyi *ogrenen* bir bandit'le dagitir (GPR tahminci + contextual bandit, federated learning). Literal sistemini calistirmadik — odulu (gozlemlenen dogruluk) DP altinda gizli; onun yerine onun tarzini DP-SQL'e uyarlayan bir ε-greedy stand-in kullandik. Gercek bir deney yaptik (naive vs kapali-form vs ε-greedy bandit). Dürüst sonuc: safe kapali-form `ε_q = B/m` (u_k ≤ m oldugundan **asla reddetmez**) %100 cevaplarken fresh-release MAE **2.0**; bandit **3.8** (ayni %100 oranda) → **~1.9× daha iyi**. Cunku closed-form, bandit'in en iyi noktasina **sifir keşif-vergisiyle** atliyor. B/m'in altina *guvenle* inmek u_k tahmini gerektirir (oracle 1.6) — modelsiz bandit yapamaz. Bu galibiyet **5-ajanli adversarial doğrulamadan** gecti (108 config taramasi, DP-gecerlilik denetimi, sifirdan replikasyon).
+**Tahsis politikasi deneyi (BGTplanner-tarzi ogrenen bandit'e karsi; BGTplanner en yakin akrabamiz):** BGTplanner butceyi *ogrenen* bir bandit'le dagitir (GPR tahminci + contextual bandit, federated learning). Literal sistemini calistirmadik — odulu (gozlemlenen dogruluk) DP altinda gizli; onun yerine onun tarzini DP-SQL'e uyarlayan bir ε-greedy stand-in kullandik. Gercek bir deney yaptik (naive vs kapali-form vs ε-greedy bandit). Dürüst sonuc: safe kapali-form `ε_q = B/m` (u_k ≤ m oldugundan **asla reddetmez**) %100 cevaplarken fresh-release MAE **2.0**; bandit **3.6** (ayni %100 oranda) → **~1.8× daha iyi**. Cunku closed-form, bandit'in en iyi noktasina **sifir keşif-vergisiyle** atliyor. B/m'in altina *guvenle* inmek u_k tahmini gerektirir (oracle 1.6) — modelsiz bandit yapamaz. Bu galibiyet **5-ajanli adversarial doğrulamadan** gecti (108 config taramasi, DP-gecerlilik denetimi, sifirdan replikasyon).
 
 ---
 
