@@ -888,7 +888,13 @@ Coarse action grid ($A{=}5$ levels) & rejected & retunable; span $[1,m]$ covers 
 \section{Beyond Single-Table Aggregates: Multi-Table Joins}
 \label{sec:joins}
 
-A natural objection is that our closed-form models were derived for single-table COUNT/SUM/AVG, where the sensitivity $\Delta f$ is a public constant ($1$ for COUNT, the column bound $B_c$ for SUM/AVG; Section~\ref{sec:threat}), and that they break for multi-table JOINs, whose sensitivity analysis is notoriously harder. We are precise about which part of the system transfers unchanged and which part genuinely degrades.
+A natural objection is that our closed-form models were derived for single-table COUNT/SUM/AVG, where the sensitivity $\Delta f$ is a public constant ($1$ for COUNT, the column bound $B_c$ for SUM/AVG; Section~\ref{sec:threat}), and that they break for multi-table JOINs, whose sensitivity analysis is notoriously harder. We are precise about which part of the system transfers unchanged and which part genuinely degrades, and we \emph{measure} the transfer on a real TPC-H join (Figure~\ref{fig:joins}).
+
+\begin{proposition}[Mechanism-agnostic forecast]
+\label{prop:agnostic}
+$\E[u_k]$, the savings $S(k)=1-\E[u_k]/k$, the workload-aware spend $\eps_q\E[u_k]$, and the relative utility ratio $k/\E[u_k]$ are functions of $(m,\{p_i\},k)$ alone; they are invariant to the per-query DP mechanism and to its sensitivity $\Delta f$, and therefore transfer from single-table aggregates to any query class---joins included---unchanged.
+\end{proposition}
+\noindent\emph{Proof.} Each is built from $\E[u_k]=\sum_i[1-(1-p_i)^k]$ (Prop.~\ref{prop:eu}), a function of the arrival distribution only; $\Delta f$ enters solely the noise scale $\Lap(\Delta f/\eps_q)$ and cancels in $k/\E[u_k]$. The single-table results are the $d_{\max}{=}1$ instance of the join-parameterized framework. \hfill$\square$
 
 \paragraph{The occupancy/spend forecast is sensitivity-agnostic.}
 Inspect what the forecasting layer consumes. The expected distinct count $\E[u_k]=\sum_i[1-(1-p_i)^k]$ (Prop.~\ref{prop:eu}), the savings ratio $S(k)=1-\E[u_k]/k$ (Prop.~\ref{prop:savings}), the three limits, the skew-monotonicity (Prop.~\ref{prop:zipf}), and the concentration bound $\Var[u_k]\le m/4$ (Prop.~\ref{prop:concentration}) are functions of the \emph{query stream} alone---the distribution $\{p_i\}$ over distinct query identities, the length $k$, and the \emph{count} $m$ of distinct releases. None references what a query computes or how sensitive it is, because occupancy---how many distinct items appear in $k$ i.i.d.\ draws---is a property of the arrival distribution, not of the data or the noise. Two consequences transfer to a JOIN workload \emph{unchanged}. (i)~The \emph{spend} forecast: under basic sequential composition the chargeable budget is $\eps_q\,\E[u_k]$, since an exact (cache-key) repeat---a JOIN repeat included---is served free as post-processing of an already-released DP answer. (ii)~The \emph{utility ratio} $k/\E[u_k]$ (Prop.~\ref{prop:utility}): the predicted error ratio is $(\Delta f/\eps_q^{\mathrm{naive}})/(\Delta f/\eps_q^{\mathrm{wa}})$, in which $\Delta f$ \emph{cancels}, so the relative-utility forecast is sensitivity-free and stays fully before-execution even when $\Delta f$ is unknown. What does \emph{not} transfer unchanged is the \emph{absolute} per-release accuracy verdict, which reads $\Delta f$ directly; we treat it below.
@@ -907,6 +913,16 @@ We do not claim the join case is free. (1)~The \emph{absolute} per-release $(\al
 
 \paragraph{Tractability verdict.}
 The occupancy forecast stays $O(m)$ per evaluation of $\E[u_k]$ regardless of join complexity, because its cost is set by the number of distinct query identities, not by any one query's structure, and it needs only $\{p_i\}$ and $k$---no degree bound. What gets harder is the orthogonal per-query problem of bounding $\Delta f$ for a join, where global sensitivity is infinite but local sensitivity at a fixed instance is finite---exactly the gap the cited works close. Integrating a residual-sensitivity~\cite{dong2021residual} smooth bound (under an $(\eps,\delta)$ relaxation) or an R2T~\cite{dong2022r2t} private truncation, behind the same exact-repeat cache, leaves the spend forecast unchanged; the accuracy verdict, however, inherits the data-dependence, $(\eps,\delta)$ semantics, and (for R2T) truncation bias, and becomes a-priori public only under a declared degree/max-frequency bound.
+
+\paragraph{Empirical confirmation (TPC-H).}
+We run the worked example as a \emph{twin} experiment (\texttt{experiments/join\_validation.py}): one Zipf identity stream over the $m{=}5$ order-priority pool, instantiated both as the single-table COUNT ($\Delta f{=}1$) and as the \texttt{orders}$\bowtie$\texttt{lineitem} COUNT ($\Delta f{=}d_{\max}{=}7$) on the real $1.5$M-order / $6$M-line-item tables ($600$ trials, $\alpha\in\{0,\dots,2\}$, $k\in\{10,\dots,100\}$). The forecast is \emph{identical} on the two sides---realized distinct count, $\E[u_k]$, savings $S(k)$, and spend $\eps_q u_k$ coincide trial-for-trial, since occupancy reads only the identity stream---and tracks the closed form within $1.4\%$ on average ($17/20$ cells under $3\%$, the same accuracy as the single-table grid; Figure~\ref{fig:joins}, left). The \emph{only} quantity that moves is the per-release noise: the answered-release MAE is $7.6\times$ larger on the join side (Figure~\ref{fig:joins}, right), matching the $d_{\max}{=}7$ sensitivity ratio, while the relative utility ratio $k/\E[u_k]$ is unchanged because $\Delta f$ cancels. The sensitivity-agnostic transfer is thus not just argued but \emph{measured}: the forecast holds on a real multi-table join exactly as on the single table.
+
+\begin{figure}[t]
+\centering
+\includegraphics[width=\columnwidth]{fig_joins}
+\caption{Twin single-table vs.\ join experiment (TPC-H, $m{=}5$ priority pool, $d_{\max}{=}7$, $600$ trials). \emph{Left:} the realized distinct count for the single-table ($\circ$) and join ($\times$) workloads lands on the \emph{same} analytical $\E[u_k]$ curve. \emph{Right:} only the per-release noise scale moves, by $\Delta f$ ($1$ vs $d_{\max}{=}7$).}
+\label{fig:joins}
+\end{figure}
 
 %% ============================================================
 \section{Future Work}
