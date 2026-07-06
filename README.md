@@ -133,6 +133,11 @@ pip install -e ".[smt]"            # optional: Z3-backed semantic-equivalence ca
 
 **2. Build the datasets** (TPC-H via DuckDB's built-in generator; Adult from UCI):
 ```bash
+# download UCI Adult (two small CSV files)
+mkdir -p data/adult
+curl -o data/adult/adult.data https://archive.ics.uci.edu/ml/machine-learning-databases/adult/adult.data
+curl -o data/adult/adult.test https://archive.ics.uci.edu/ml/machine-learning-databases/adult/adult.test
+
 python scripts/load_data.py                 # → data/dpdb.duckdb  (TPC-H SF=1 + Adult)
 python scripts/load_sf10.py                 # optional: SF=10 for the scale-invariance sweep
 ```
