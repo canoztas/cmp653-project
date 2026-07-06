@@ -42,8 +42,8 @@ python3 -m dpdb.demo
 * Dataset sizes: TPC-H SF=1 (6M lineitem rows) + UCI Adult (48K rows)
 * W1 Repetitive workload: **10x budget reduction** (10.0 -> 1.0 eps)
 * W2 Parametric workload: **3.3x budget reduction** with 85% cache hit rate
-* All 28 unit tests passing
-* Implementation: ~1000 lines Python, single-file DuckDB backend
+* All 233 unit tests passing
+* Implementation: Python middleware over a single-file DuckDB backend
 
 ## Baselines Compared
 

@@ -15,6 +15,9 @@ from dpdb.model import (
     expected_budget_temporal,
     expected_budget_workload_aware,
     expected_unique_queries,
+    expected_unique_queries_sticky,
+    expected_unique_queries_markov,
+    expected_unique_queries_hmm,
     mcdiarmid_tail_bound,
     occupancy_variance,
     predict_utility_fixed_budget,
@@ -83,6 +86,116 @@ class TestExpectedUniqueQueries:
         p = uniform_distribution(m=5)
         eu = expected_unique_queries(p, k=10000)
         assert abs(eu - 5.0) < 1e-3
+
+
+class TestStickyMarkovOccupancy:
+    """Closed-form occupancy under the sticky Markov arrival process:
+    E[u_k] = sum_i [1 - (1-p_i)(s + (1-s)(1-p_i))^{k-1}]."""
+
+    def test_s0_recovers_iid(self):
+        p = zipf_distribution(20, 1.0)
+        for k in (10, 100, 200):
+            assert (expected_unique_queries_sticky(p, k, 0.0)
+                    == pytest.approx(expected_unique_queries(p, k), abs=1e-9))
+
+    def test_s1_gives_single_template(self):
+        # always repeat the first draw -> exactly one distinct template
+        p = zipf_distribution(20, 1.0)
+        for k in (5, 50, 500):
+            assert expected_unique_queries_sticky(p, k, 1.0) == pytest.approx(1.0, abs=1e-9)
+
+    def test_monotone_decreasing_in_s(self):
+        # more burstiness -> fewer distinct templates
+        p = zipf_distribution(30, 1.0)
+        vals = [expected_unique_queries_sticky(p, 100, s) for s in (0.0, 0.3, 0.6, 0.9)]
+        assert all(vals[i] > vals[i + 1] for i in range(len(vals) - 1))
+
+    def test_matches_simulation(self):
+        p = zipf_distribution(25, 1.0)
+        k, s = 80, 0.6
+        closed = expected_unique_queries_sticky(p, k, s)
+        rng = np.random.default_rng(123)
+        sims = []
+        for _ in range(3000):
+            seq = np.empty(k, dtype=int)
+            seq[0] = rng.choice(len(p), p=p)
+            for t in range(1, k):
+                seq[t] = seq[t - 1] if rng.random() < s else rng.choice(len(p), p=p)
+            sims.append(len(set(seq.tolist())))
+        assert closed == pytest.approx(float(np.mean(sims)), abs=0.3)
+
+
+class TestGeneralMarkovOccupancy:
+    """General-Markov occupancy E[u_k] = sum_i [1 - nu_i^T Q_i^{k-1} 1], which
+    subsumes the i.i.d. and sticky closed forms."""
+
+    def test_recovers_iid(self):
+        p = zipf_distribution(8, 1.0)
+        P = np.tile(p, (8, 1))                  # every row = p  -> i.i.d.
+        for k in (10, 50, 120):
+            assert (expected_unique_queries_markov(P, p, k)
+                    == pytest.approx(expected_unique_queries(p, k), abs=1e-9))
+
+    def test_recovers_sticky(self):
+        p = zipf_distribution(10, 0.8)
+        s = 0.6
+        P = (1 - s) * np.tile(p, (10, 1)) + s * np.eye(10)
+        for k in (10, 80):
+            assert (expected_unique_queries_markov(P, p, k)
+                    == pytest.approx(expected_unique_queries_sticky(p, k, s), abs=1e-9))
+
+    def test_matches_simulation_general_chain(self):
+        rng = np.random.default_rng(0)
+        m, k = 6, 60
+        M = rng.random((m, m)) + 0.05
+        P = M / M.sum(1, keepdims=True)
+        nu = rng.random(m); nu /= nu.sum()
+        closed = expected_unique_queries_markov(P, nu, k)
+        sims = []
+        for t in range(3000):
+            r = np.random.default_rng(5000 + t)
+            x = r.choice(m, p=nu); seen = {x}
+            for _ in range(k - 1):
+                x = r.choice(m, p=P[x]); seen.add(x)
+            sims.append(len(seen))
+        assert closed == pytest.approx(float(np.mean(sims)), abs=0.2)
+
+
+class TestMarkovModulatedOccupancy:
+    """Latent-state (HMM) occupancy E[u_k]=sum_i[1-omega^T D_i (T D_i)^{k-1} 1],
+    which subsumes the i.i.d. and general-Markov forms."""
+
+    def test_single_state_recovers_iid(self):
+        p = zipf_distribution(8, 1.0)
+        T = np.array([[1.0]]); om = np.array([1.0]); E = p.reshape(1, -1)
+        for k in (10, 60, 150):
+            assert (expected_unique_queries_hmm(T, om, E, k)
+                    == pytest.approx(expected_unique_queries(p, k), abs=1e-9))
+
+    def test_deterministic_emission_recovers_general_markov(self):
+        rng = np.random.default_rng(3); m = 6
+        Mx = rng.random((m, m)) + 0.1; P = Mx / Mx.sum(1, keepdims=True)
+        nu = rng.random(m); nu /= nu.sum()
+        for k in (20, 60):
+            assert (expected_unique_queries_hmm(P, nu, np.eye(m), k)
+                    == pytest.approx(expected_unique_queries_markov(P, nu, k), abs=1e-9))
+
+    def test_matches_simulation_regime_switching(self):
+        m = 12; half = m // 2
+        eA = np.zeros(m); eA[:half] = 1.0 / half
+        eB = np.zeros(m); eB[half:] = 1.0 / (m - half)
+        E = np.vstack([eA, eB])
+        T = np.array([[0.9, 0.1], [0.1, 0.9]]); om = np.array([0.5, 0.5])
+        k = 40
+        closed = expected_unique_queries_hmm(T, om, E, k)
+        sims = []
+        for t in range(3000):
+            rng = np.random.default_rng(11 + t)
+            h = int(rng.choice(2, p=om)); seen = set()
+            for _ in range(k):
+                seen.add(int(rng.choice(m, p=E[h]))); h = int(rng.choice(2, p=T[h]))
+            sims.append(len(seen))
+        assert closed == pytest.approx(float(np.mean(sims)), abs=0.3)
 
 
 class TestBudgetSavingsRatio:

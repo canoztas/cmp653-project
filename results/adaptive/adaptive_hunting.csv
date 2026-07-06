@@ -1,0 +1,3 @@
+policy,m,k,eps_q,B,alpha,trials,forecast_uk,mean_uk,uk_ci95_half,min_uk,max_uk,mean_spend,spend_ci95_half,max_spend,within_B,uk_cap_ok,spend_cap_ok,spend_identity_ok
+iid,50,40,0.2,10.0,1.0,40,19.555409301956793,19.175,0.672724102399132,14,23,3.835000000000001,0.13454482047982644,4.600000000000001,True,True,True,True
+hunting,50,40,0.2,10.0,1.0,40,19.555409301956793,22.0,0.2327582657101789,21,24,4.400000000000001,0.04655165314203582,4.800000000000002,True,True,True,True

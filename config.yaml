@@ -13,6 +13,15 @@ privacy:
   default_query_epsilon: 1.0
   mechanism: laplace
 
+# Public foreign-key multiplicity bounds for supported FK joins:
+# fk_multiplicity[parent][child] = d_max = max child rows per parent entity.
+# It is the COUNT global-sensitivity constant for the parent-child join when the
+# privacy unit is the parent entity. From the TPC-H spec a single order has at
+# most 7 line-items, so removing one order changes a join COUNT by at most 7.
+fk_multiplicity:
+  orders:
+    lineitem: 7
+
 # Upper bounds for SUM/AVG sensitivity (from TPC-H spec)
 column_bounds:
   lineitem:

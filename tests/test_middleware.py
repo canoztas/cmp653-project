@@ -12,7 +12,7 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
-from dpdb.analyzer import SensitivityResult
+from dpdb.analyzer import SensitivityError, SensitivityResult, analyze_sensitivity
 from dpdb.config import Config
 from dpdb.middleware import DPMiddleware, ExecutionMode
 from dpdb.parser import parse_query
@@ -22,6 +22,36 @@ def _add_noise(parsed, true_rows, sensitivities, epsilon):
     """Call _add_noise without constructing a backend database."""
     mw = DPMiddleware.__new__(DPMiddleware)
     return mw._add_noise(parsed, true_rows, sensitivities, epsilon)
+
+
+class TestJoinSensitivity:
+    """A FK-join COUNT must be charged the public FK multiplicity d_max, not 1:
+    removing one parent entity removes up to d_max joined rows (privacy unit =
+    parent). An undeclared FK pair has unbounded sensitivity and must be refused."""
+
+    def test_join_count_sensitivity_is_d_max(self):
+        cfg = Config.from_yaml()  # config.yaml declares orders->lineitem = 7
+        parsed = parse_query(
+            "SELECT COUNT(*) FROM orders JOIN lineitem ON l_orderkey = o_orderkey "
+            "WHERE o_orderpriority = '1-URGENT'")
+        sens = analyze_sensitivity(parsed, cfg)
+        assert len(sens) == 1
+        assert sens[0].func == "COUNT"
+        assert sens[0].sensitivity == 7.0
+
+    def test_single_table_count_still_unit_sensitivity(self):
+        cfg = Config.from_yaml()
+        parsed = parse_query("SELECT COUNT(*) FROM orders WHERE o_orderpriority = '1-URGENT'")
+        sens = analyze_sensitivity(parsed, cfg)
+        assert sens[0].sensitivity == 1.0
+
+    def test_undeclared_fk_join_refused(self):
+        cfg = Config.from_yaml()
+        cfg.fk_multiplicity = {}  # no public d_max -> unbounded sensitivity
+        parsed = parse_query(
+            "SELECT COUNT(*) FROM orders JOIN lineitem ON l_orderkey = o_orderkey")
+        with pytest.raises(SensitivityError, match="d_max"):
+            analyze_sensitivity(parsed, cfg)
 
 
 class TestNoiseColumnTargeting:

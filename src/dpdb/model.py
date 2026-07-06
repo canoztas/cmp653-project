@@ -78,6 +78,109 @@ def expected_unique_queries(p: Sequence[float], k: int) -> float:
     return float(np.sum(1.0 - (1.0 - p_arr) ** k))
 
 
+def expected_unique_queries_sticky(p: Sequence[float], k: int, s: float) -> float:
+    """E[u_k] under a *sticky* Markov arrival process (bursty workloads).
+
+    Arrival model: X_1 ~ p; for t>=2, X_t = X_{t-1} with probability s (repeat),
+    else a fresh i.i.d. draw from p. The stationary marginal is p, so this is the
+    i.i.d. model's Markovian generalisation with a single burstiness knob s.
+
+    Closed form. The set of DISTINCT templates visited equals the set of distinct
+    values among the *fresh draws* (a repeat only re-emits the current template),
+    and the number of fresh draws is F = 1 + Binomial(k-1, 1-s). Conditioning on
+    F and using E[z^Binomial(n,1-s)] = (s + (1-s)z)^n gives
+
+        E[u_k] = sum_i [ 1 - (1-p_i) * (s + (1-s)(1-p_i))^{k-1} ].
+
+    Limits: s=0 recovers the i.i.d. expected_unique_queries; s=1 gives 1 (only the
+    first draw is ever seen). For 0<s<1 it is <= the i.i.d. value, which is why the
+    i.i.d. forecast *over*-predicts u_k on bursty streams (the safe direction).
+    """
+    if not 0.0 <= s <= 1.0:
+        raise ValueError("stickiness s must be in [0, 1]")
+    if k <= 0:
+        return 0.0
+    p_arr = np.clip(np.asarray(p, dtype=float), 0.0, 1.0)
+    one_minus = 1.0 - p_arr
+    return float(np.sum(1.0 - one_minus * (s + (1.0 - s) * one_minus) ** (k - 1)))
+
+
+def expected_unique_queries_markov(P: Sequence[Sequence[float]],
+                                   nu: Sequence[float], k: int) -> float:
+    """E[u_k] under a GENERAL Markov arrival process with transition matrix P
+    (row-stochastic, P[j][l] = Pr[next=l | current=j]) and initial distribution
+    nu (X_1 ~ nu, X_{t+1} ~ P[X_t]).
+
+    Closed form. A state i is *unvisited* in k steps iff the chain avoids i for
+    all k steps. Restricting to the (m-1) states S_i = {all but i}, with Q_i the
+    sub-stochastic block P[S_i, S_i] and nu_i the initial mass on S_i,
+        Pr[i never visited] = nu_i^T Q_i^{k-1} 1,
+    so E[u_k] = sum_i [ 1 - nu_i^T Q_i^{k-1} 1 ].
+
+    This subsumes the earlier closed forms: with every row of P equal to nu={p_i}
+    it recovers the i.i.d. expected_unique_queries; with the sticky kernel
+    P[j][j]=s+(1-s)p_j, P[j][l]=(1-s)p_l (l!=j) and nu={p_i} it recovers
+    expected_unique_queries_sticky. Cost O(m * (m-1)^3 log k) via matrix powers;
+    practical for the moderate template universes the forecast targets.
+    """
+    if k <= 0:
+        return 0.0
+    P_arr = np.asarray(P, dtype=float)
+    nu_arr = np.asarray(nu, dtype=float)
+    m = nu_arr.shape[0]
+    if P_arr.shape != (m, m):
+        raise ValueError("P must be m x m matching len(nu)")
+    idx = np.arange(m)
+    total = 0.0
+    for i in range(m):
+        keep = idx != i
+        Qi = P_arr[np.ix_(keep, keep)]          # (m-1)x(m-1) sub-stochastic block
+        nu_i = nu_arr[keep]
+        vec = np.linalg.matrix_power(Qi, k - 1) @ np.ones(m - 1)  # Q_i^{k-1} 1
+        total += 1.0 - float(nu_i @ vec)        # 1 - Pr[i never visited]
+    return float(total)
+
+
+def expected_unique_queries_hmm(transition: Sequence[Sequence[float]],
+                                init: Sequence[float],
+                                emission: Sequence[Sequence[float]],
+                                k: int) -> float:
+    """E[u_k] under a non-stationary, latent-state arrival process: a hidden
+    Markov chain modulates which template distribution is in force.
+
+    A hidden state h_t follows a Markov chain (row-stochastic ``transition`` of
+    shape H x H, initial law ``init`` of length H); in state h the query is drawn
+    from ``emission[h]`` (an H x m row-stochastic matrix over the m templates).
+    This is the regime-switching / Markov-modulated workload the reviewer asks
+    for: {p_i} is not fixed but changes with a latent state.
+
+    Closed form. Template i is unvisited over k steps iff every step avoids it.
+    With D_i = diag(1 - emission[:,i]) the per-state "avoid i" factors,
+        Pr[i never visited] = init^T D_i (transition D_i)^{k-1} 1,
+    so E[u_k] = sum_i [1 - init^T D_i (transition D_i)^{k-1} 1].
+
+    This subsumes every earlier occupancy formula: one hidden state recovers the
+    i.i.d. expected_unique_queries; a deterministic emission (hidden state = the
+    template, emission = identity) recovers expected_unique_queries_markov, and
+    hence the sticky and i.i.d. special cases.
+    """
+    if k <= 0:
+        return 0.0
+    P = np.asarray(transition, dtype=float)
+    om = np.asarray(init, dtype=float)
+    E = np.asarray(emission, dtype=float)
+    H, m = E.shape
+    if P.shape != (H, H) or om.shape != (H,):
+        raise ValueError("transition must be HxH and init length H, matching emission rows")
+    ones = np.ones(H)
+    total = 0.0
+    for i in range(m):
+        Di = np.diag(1.0 - E[:, i])                  # per-state prob of NOT emitting i
+        vec = np.linalg.matrix_power(P @ Di, k - 1) @ ones
+        total += 1.0 - float(om @ Di @ vec)
+    return float(total)
+
+
 def expected_budget_workload_aware(p: Sequence[float], k: int, eps_q: float) -> float:
     """E[ε_wa(k)] = ε_q * E[u_k]   (Proposition 2)."""
     return eps_q * expected_unique_queries(p, k)

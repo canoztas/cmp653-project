@@ -25,6 +25,13 @@ class ParsedQuery:
     table: str
     aggregates: list[AggregateInfo] = field(default_factory=list)
     group_by: list[str] = field(default_factory=list)
+    # FK-join support (single 2-table inner equi-join). When is_join is True the
+    # privacy unit is a parent ENTITY and the COUNT sensitivity is the public FK
+    # multiplicity d_max, not 1 (resolved against config in the analyzer).
+    is_join: bool = False
+    join_table: Optional[str] = None
+    join_on: Optional[str] = None
+    tables: list[str] = field(default_factory=list)
     where_clause: Optional[str] = None
     where_predicates: list[str] = field(default_factory=list)
     # Top-k support: ORDER BY <result column> [DESC|ASC] LIMIT k. The ordering and
@@ -83,10 +90,33 @@ def parse_query(sql: str) -> ParsedQuery:
         raise ParseError("Could not identify table")
     table_name = table_expr.name
 
-    # Reject JOINs for now (single-table only)
+    # Single FK join support: exactly one INNER equi-join of two tables. The
+    # privacy unit is the parent entity and the COUNT sensitivity is the public
+    # FK multiplicity d_max (resolved in the analyzer). OUTER/CROSS joins, more
+    # than one join, and SUM/AVG over a join are rejected as out of the safe
+    # envelope (a row's contribution there can exceed d_max or d_max*B_c in ways
+    # this conservative bound does not yet cover -- future work).
     joins = list(ast.find_all(exp.Join))
+    is_join = False
+    join_table = None
+    join_on = None
     if joins:
-        raise ParseError("JOINs are not supported in the current version")
+        if len(joins) != 1:
+            raise ParseError("At most one JOIN is supported (single FK join only)")
+        j = joins[0]
+        side = (j.args.get("side") or "").upper()
+        kind = (j.args.get("kind") or "").upper()
+        if side in ("LEFT", "RIGHT", "FULL") or kind == "CROSS":
+            raise ParseError("Only INNER FK joins are supported (no OUTER/CROSS join)")
+        jt = j.find(exp.Table)
+        if jt is None:
+            raise ParseError("Could not identify the joined table")
+        join_table = jt.name
+        on = j.args.get("on")
+        if on is None:
+            raise ParseError("JOIN requires an ON equality condition on the foreign key")
+        join_on = on.sql()
+        is_join = True
 
     # Reject HAVING: it filters groups on a data-dependent aggregate condition,
     # which is an unaccounted private selection (group membership leaks the true
@@ -134,6 +164,14 @@ def parse_query(sql: str) -> ParsedQuery:
 
     if not aggregates:
         raise ParseError("At least one aggregate function required (COUNT, SUM, AVG)")
+
+    # Over a join, only COUNT is supported: its sensitivity is exactly the FK
+    # multiplicity d_max. SUM/AVG over a join would need a per-table column-bound
+    # clamp times d_max, which is not yet wired through the executor (future work).
+    if is_join and any(a.func != "COUNT" for a in aggregates):
+        raise ParseError(
+            "Only COUNT is supported over a JOIN in the current version "
+            "(SUM/AVG over joins are future work)")
 
     # Extract WHERE
     where = ast.find(exp.Where)
@@ -194,6 +232,10 @@ def parse_query(sql: str) -> ParsedQuery:
         order_by_position=order_by_position,
         order_desc=order_desc,
         limit=limit,
+        is_join=is_join,
+        join_table=join_table,
+        join_on=join_on,
+        tables=[table_name] + ([join_table] if join_table else []),
     )
 
 

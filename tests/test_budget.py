@@ -106,3 +106,36 @@ class TestTemporalUpdateSeed:
     def test_independent_seeds_vary(self):
         # independent update streams -> not all seeds collapse to one value
         assert len({self._evictions(s) for s in range(6)}) > 1
+
+
+class TestBudgetAwareReReleaseCeiling:
+    """Proposition (budget-aware re-release, prop:barr in the paper): a budget-gated
+    sequence of eps_q releases spends at most B and admits exactly
+    min(R, floor(B/eps_q)) paid releases for any number R of requested releases.
+    This pins the proven temporal ceiling empirically (the paper's provable
+    upper bound, as opposed to the magnitude planning estimate)."""
+
+    def _paid_releases(self, total_budget, eps_q, requested):
+        ledger = BudgetLedger(total_budget, AllocationStrategy.NAIVE)
+        paid = 0
+        for i in range(requested):
+            q = parse_query(f"SELECT COUNT(*) FROM lineitem WHERE l_linenumber = {i}")
+            try:
+                ledger.allocate(q, eps_q)
+                paid += 1
+            except BudgetExhausted:
+                break
+        return paid, ledger
+
+    def test_ceiling_when_requests_exceed_capacity(self):
+        # B=10, eps_q=1, R=25 requested -> exactly floor(B/eps_q)=10 paid, spend<=B
+        paid, ledger = self._paid_releases(10.0, 1.0, 25)
+        assert paid == 10                       # = floor(B/eps_q)
+        assert ledger.remaining >= -1e-9
+        assert (10.0 - ledger.remaining) <= 10.0 + 1e-9   # cumulative spend never exceeds B
+
+    def test_all_succeed_when_requests_below_capacity(self):
+        # R=6 < floor(B/eps_q)=10 -> all 6 succeed, count = min(R, floor(B/eps_q)) = R
+        paid, ledger = self._paid_releases(10.0, 1.0, 6)
+        assert paid == 6
+        assert ledger.remaining == pytest.approx(4.0)

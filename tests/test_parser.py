@@ -56,10 +56,33 @@ class TestInvalidQueries:
         with pytest.raises(ParseError, match="SELECT"):
             parse_query("UPDATE lineitem SET l_quantity = 0")
 
-    def test_join_rejected(self):
-        with pytest.raises(ParseError, match="JOIN"):
+    def test_inner_fk_join_count_accepted(self):
+        # A single 2-table inner equi-join COUNT now parses; the privacy-relevant
+        # d_max sensitivity is resolved against config in the analyzer, not here.
+        q = parse_query(
+            "SELECT COUNT(*) FROM orders JOIN lineitem ON l_orderkey = o_orderkey"
+        )
+        assert q.is_join
+        assert q.join_table == "lineitem"
+        assert q.tables == ["orders", "lineitem"]
+
+    def test_sum_over_join_rejected(self):
+        with pytest.raises(ParseError, match="COUNT is supported over a JOIN"):
             parse_query(
-                "SELECT COUNT(*) FROM lineitem JOIN orders ON l_orderkey = o_orderkey"
+                "SELECT SUM(l_quantity) FROM orders JOIN lineitem ON l_orderkey = o_orderkey"
+            )
+
+    def test_outer_join_rejected(self):
+        with pytest.raises(ParseError, match="INNER FK joins"):
+            parse_query(
+                "SELECT COUNT(*) FROM orders LEFT JOIN lineitem ON l_orderkey = o_orderkey"
+            )
+
+    def test_multiple_joins_rejected(self):
+        with pytest.raises(ParseError, match="one JOIN"):
+            parse_query(
+                "SELECT COUNT(*) FROM orders JOIN lineitem ON l_orderkey = o_orderkey "
+                "JOIN customer ON o_custkey = c_custkey"
             )
 
     def test_subquery_rejected(self):
