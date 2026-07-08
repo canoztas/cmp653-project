@@ -4,7 +4,7 @@ Can Öztaş · Engin Demir — Hacettepe University
 
 A differentially private SQL middleware together with a closed-form model that predicts, **before any query runs**, how much privacy budget a workload will spend. Because exact (and provably equivalent) repeats are served from cache by post-processing, the budget is governed by the number of *distinct* queries, `E[u_k] = Σ_i (1 − (1 − p_i)^k)`, which the model forecasts from public repetition structure alone. The forecast is the accounting core of the middleware: it sizes the budget allocator, gates temporal re-releases, and prices equivalence-aware caching.
 
-**Paper:** [`report/paper.pdf`](report/paper.pdf) (LaTeX source: [`report/paper.tex`](report/paper.tex); a self-contained submission bundle is in [`report/journal_submission/`](report/journal_submission/)).
+This repository contains the implementation and experiment artifacts accompanying the paper *Forecasting Privacy-Budget Consumption in Repeated DP-SQL Workloads* (under submission).
 
 Key results:
 
@@ -97,7 +97,6 @@ experiments/     one script per reported figure/number
 tests/           233 unit tests
 scripts/         dataset builders (load_data.py → data/dpdb.duckdb)
 demo/            interactive web demo (Flask)
-report/          the paper (paper.tex / paper.pdf) and the submission bundle
 results/         generated figures and CSVs
 ```
 
